@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AppToaster } from "@/components/ui/toaster";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,12 +24,37 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const themeScript = `
+    (() => {
+      try {
+        const stored = localStorage.getItem("theme");
+        const system = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        const theme = stored === "light" || stored === "dark" ? stored : system;
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.classList.add("theme-ready");
+      } catch (e) {
+        document.documentElement.dataset.theme = "dark";
+        document.documentElement.classList.add("theme-ready");
+      }
+    })();
+  `;
+
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          id="theme-prefers"
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <div className="fixed right-4 top-4 z-40">
+          <ThemeToggle />
+        </div>
         {children}
+        <AppToaster />
       </body>
     </html>
   );

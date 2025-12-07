@@ -1,8 +1,33 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #05070d;
+  --foreground: #e5e7eb;
+  --muted: #9aa5b5;
+  --primary: #34d399;
+  --primary-strong: #22c08f;
+  --surface: #0d111a;
+  --surface-strong: #151b28;
+  --border: rgba(148, 163, 184, 0.2);
+  --success: #34d399;
+  --success-strong: #3ee1a7;
+  --info: #60a5fa;
+  --info-strong: #7cb2ff;
+}
+
+:root[data-theme="light"] {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --muted: #6b7280;
+  --primary: #0ea5e9;
+  --primary-strong: #0284c7;
+  --surface: #ffffff;
+  --surface-strong: #f1f5f9;
+  --border: rgba(148, 163, 184, 0.4);
+  --success: #22c55e;
+  --success-strong: #16a34a;
+  --info: #2563eb;
+  --info-strong: #1d4ed8;
 }
 
 @theme inline {
@@ -12,15 +37,73 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+}
+
+/* Prevent theme flash: hide until theme is set, then fade in */
+html:not(.theme-ready) body {
+  opacity: 0;
+}
+
+html.theme-ready body {
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-ready body {
+    transition: none;
+  }
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.bg-surface {
+  background: var(--surface);
+}
+
+.bg-surface-strong {
+  background: var(--surface-strong);
+}
+
+.border-border {
+  border-color: var(--border);
+}
+
+.text-foreground {
+  color: var(--foreground);
+}
+
+.text-success-strong {
+  color: var(--success-strong);
+}
+
+.text-info-strong {
+  color: var(--info-strong);
+}
+
+.bg-primary {
+  background: var(--primary);
+}
+
+.bg-primary-strong {
+  background: var(--primary-strong);
+}
+
+.text-primary {
+  color: var(--primary);
+}
+
+.bg-success {
+  background: var(--success);
+}
+
+.bg-info {
+  background: var(--info);
 }
