@@ -29,6 +29,7 @@ type User = {
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -49,18 +50,34 @@ export default function UsersPage() {
   const [healthStatus, setHealthStatus] = useState<
     "ok" | "error" | "loading"
   >("loading");
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(10);
 
   async function loadUsers(showToast = false) {
     setLoading(true);
     try {
-      const res = await fetch("/api/users");
+      const params = new URLSearchParams();
+      if (filterDomain) params.set("domain", filterDomain);
+      if (searchTerm) params.set("search", searchTerm);
+      if (
+        activeProviders.length &&
+        activeProviders.length !== PROVIDERS.length
+      ) {
+        params.set("providers", activeProviders.join(","));
+      }
+      params.set("sort", sortOrder);
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+
+      const res = await fetch(`/api/users?${params.toString()}`);
       if (!res.ok) {
         throw new Error(`Failed to load users (${res.status})`);
       }
-      const data = (await res.json()) as User[];
-      setUsers(data);
-      if (!selectedUserId && data[0]) {
-        setSelectedUserId(data[0].id);
+      const data = await res.json();
+      setUsers(data.items as User[]);
+      setTotal(data.total ?? 0);
+      if (!selectedUserId && data.items?.[0]) {
+        setSelectedUserId(data.items[0].id);
       }
       if (showToast) toast.success("Users refreshed");
     } catch (err) {
@@ -88,6 +105,11 @@ export default function UsersPage() {
     loadUsers();
     loadHealth();
   }, []);
+
+  useEffect(() => {
+    loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterDomain, searchTerm, activeProviders, sortOrder, page]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -194,33 +216,6 @@ export default function UsersPage() {
     }
   }
 
-  const filteredUsers = users.filter((user) => {
-    const domainOk =
-      !filterDomain ||
-      user.email.toLowerCase().includes(filterDomain.toLowerCase()) ||
-      user.accounts.some((acc) =>
-        acc.emailAddress.toLowerCase().includes(filterDomain.toLowerCase())
-      );
-    const providerOk =
-      activeProviders.length === PROVIDERS.length ||
-      user.accounts.some((acc) =>
-        activeProviders.includes(acc.provider as Provider)
-      );
-    const searchOk =
-      !searchTerm ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.accounts.some((acc) =>
-        acc.emailAddress.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    return domainOk && providerOk && searchOk;
-  });
-
-  const sortedUsers = [...filteredUsers].sort((a, b) => {
-    const aTime = new Date(a.createdAt).getTime();
-    const bTime = new Date(b.createdAt).getTime();
-    return sortOrder === "newest" ? bTime - aTime : aTime - bTime;
-  });
-
   function toggleProvider(provider: Provider) {
     const exists = activeProviders.includes(provider);
     if (exists) {
@@ -266,7 +261,8 @@ export default function UsersPage() {
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
               <p className="text-sm text-muted">
-                Create test users and see their connected accounts.
+                Create test users and see their connected accounts. Filters are
+                client-side for now; saved views persist.
               </p>
             </div>
             <Button
@@ -414,6 +410,28 @@ export default function UsersPage() {
                   {savingView ? "Saving..." : "Save view"}
                 </Button>
               </div>
+
+              <div className="flex items-center gap-3 text-xs text-muted">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={page === 1 || loading}
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                >
+                  Prev
+                </Button>
+                <span>
+                  Page {page} · Showing {users.length} of {total || users.length}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={users.length + (page - 1) * pageSize >= total}
+                  onClick={() => setPage(page + 1)}
+                >
+                  Next
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -422,7 +440,9 @@ export default function UsersPage() {
               <CardTitle className="flex items-center justify-between text-xs uppercase tracking-wide text-muted">
                 <span>Existing users</span>
                 <span className="text-muted">
-                  {loading ? "Loading..." : `${filteredUsers.length} shown`}
+                  {loading
+                    ? "Loading..."
+                    : `${users.length} shown of ${total || users.length}`}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -449,17 +469,17 @@ export default function UsersPage() {
                   </div>
                 ))}
               </CardContent>
-            ) : users.length === 0 ? (
+            ) : users.length === 0 && total === 0 ? (
               <CardContent className="text-sm text-muted">
                 No users yet. Add one above to get started.
               </CardContent>
-            ) : filteredUsers.length === 0 ? (
+            ) : users.length === 0 ? (
               <CardContent className="text-sm text-muted">
                 No users match the current filters. Try clearing filters or search.
               </CardContent>
             ) : (
               <CardContent className="divide-y divide-border/70">
-                {sortedUsers.map((user) => (
+                {users.map((user) => (
                   <div key={user.id} className="py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>

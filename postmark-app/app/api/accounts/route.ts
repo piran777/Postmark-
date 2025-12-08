@@ -10,6 +10,31 @@ function normalizeProvider(value: unknown): Provider | null {
   return match ?? null;
 }
 
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const userId = searchParams.get("userId") ?? undefined;
+  const provider = searchParams.get("provider");
+  const normalizedProvider = provider ? normalizeProvider(provider) : null;
+
+  const accounts = await prisma.emailAccount.findMany({
+    where: {
+      userId,
+      provider: normalizedProvider ?? undefined,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return Response.json(
+    accounts.map((a) => ({
+      id: a.id,
+      userId: a.userId,
+      provider: a.provider,
+      emailAddress: a.emailAddress,
+      createdAt: a.createdAt,
+    }))
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { userId, provider, emailAddress } = await req.json();
