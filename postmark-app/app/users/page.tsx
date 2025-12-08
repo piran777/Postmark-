@@ -34,6 +34,8 @@ export default function UsersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [accountBusy, setAccountBusy] = useState<string | null>(null);
   const [savingView, setSavingView] = useState(false);
+  const [viewName, setViewName] = useState("Saved view");
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const PROVIDERS = ["Gmail", "Outlook", "Other"] as const;
   type Provider = (typeof PROVIDERS)[number];
   const [filterDomain, setFilterDomain] = useState("");
@@ -57,6 +59,9 @@ export default function UsersPage() {
       }
       const data = (await res.json()) as User[];
       setUsers(data);
+      if (!selectedUserId && data[0]) {
+        setSelectedUserId(data[0].id);
+      }
       if (showToast) toast.success("Users refreshed");
     } catch (err) {
       toast.error(
@@ -159,13 +164,13 @@ export default function UsersPage() {
   }
 
   async function saveView() {
-    if (!users[0]) {
-      toast.error("Create a user first to save a view.");
+    if (!selectedUserId) {
+      toast.error("Select a user to save the view.");
       return;
     }
-    const userId = users[0].id;
+    const userId = selectedUserId;
     const view = {
-      name: "Saved view",
+      name: viewName?.trim() || "Saved view",
       domain: filterDomain,
       providers: activeProviders,
     };
@@ -332,6 +337,15 @@ export default function UsersPage() {
                     placeholder="Search users..."
                   />
                 </div>
+                <div className="flex-1">
+                  <Label>View name</Label>
+                  <Input
+                    type="text"
+                    value={viewName}
+                    onChange={(e) => setViewName(e.target.value)}
+                    placeholder="e.g. Clients only"
+                  />
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs text-muted">
@@ -373,6 +387,24 @@ export default function UsersPage() {
                   </select>
                 </div>
 
+                <div className="flex flex-col gap-1 text-sm text-muted sm:flex-row sm:items-center sm:gap-2">
+                  <span>Save for:</span>
+                  <select
+                    value={selectedUserId ?? ""}
+                    onChange={(e) =>
+                      setSelectedUserId(e.target.value || null)
+                    }
+                    className="rounded-md border border-border bg-surface px-2 py-1 text-foreground"
+                  >
+                    <option value="">Choose user</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <Button
                   onClick={saveView}
                   disabled={savingView}
@@ -396,10 +428,34 @@ export default function UsersPage() {
             </CardHeader>
 
             {loading ? (
-              <CardContent className="text-sm text-muted">Loading...</CardContent>
+              <CardContent className="space-y-3">
+                {[0, 1].map((i) => (
+                  <div
+                    key={i}
+                    className="animate-pulse space-y-3 rounded-xl border border-border/60 bg-surface-strong px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="h-4 w-40 rounded bg-border/60" />
+                      <div className="h-4 w-16 rounded bg-border/60" />
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {[0, 1, 2].map((j) => (
+                        <div
+                          key={j}
+                          className="h-12 rounded-lg border border-border/60 bg-border/30"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
             ) : users.length === 0 ? (
               <CardContent className="text-sm text-muted">
                 No users yet. Add one above to get started.
+              </CardContent>
+            ) : filteredUsers.length === 0 ? (
+              <CardContent className="text-sm text-muted">
+                No users match the current filters. Try clearing filters or search.
               </CardContent>
             ) : (
               <CardContent className="divide-y divide-border/70">
@@ -435,9 +491,7 @@ export default function UsersPage() {
                                 {provider}
                               </span>
                               <span className="text-xs text-muted">
-                                {connected
-                                  ? "Connected"
-                                  : "Not connected"}
+                                {connected ? "Connected" : "Not connected"}
                               </span>
                             </div>
                             <Switch
@@ -467,7 +521,7 @@ export default function UsersPage() {
                       </div>
                     )}
 
-                    {user.savedViews && user.savedViews.length > 0 && (
+                    {user.savedViews && user.savedViews.length > 0 ? (
                       <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
                         {user.savedViews.map((view) => (
                           <button
@@ -479,6 +533,10 @@ export default function UsersPage() {
                             {view.name}
                           </button>
                         ))}
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-[11px] text-muted">
+                        No saved views for this user yet.
                       </div>
                     )}
                   </div>
