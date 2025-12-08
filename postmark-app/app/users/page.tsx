@@ -42,6 +42,11 @@ export default function UsersPage() {
     "Outlook",
     "Other",
   ]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [healthStatus, setHealthStatus] = useState<
+    "ok" | "error" | "loading"
+  >("loading");
 
   async function loadUsers(showToast = false) {
     setLoading(true);
@@ -62,8 +67,21 @@ export default function UsersPage() {
     }
   }
 
+  async function loadHealth() {
+    try {
+      setHealthStatus("loading");
+      const res = await fetch("/api/health");
+      if (!res.ok) throw new Error("Health check failed");
+      const data = await res.json();
+      setHealthStatus(data?.status === "ok" ? "ok" : "error");
+    } catch {
+      setHealthStatus("error");
+    }
+  }
+
   useEffect(() => {
     loadUsers();
+    loadHealth();
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -183,7 +201,19 @@ export default function UsersPage() {
       user.accounts.some((acc) =>
         activeProviders.includes(acc.provider as Provider)
       );
-    return domainOk && providerOk;
+    const searchOk =
+      !searchTerm ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.accounts.some((acc) =>
+        acc.emailAddress.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    return domainOk && providerOk && searchOk;
+  });
+
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    const aTime = new Date(a.createdAt).getTime();
+    const bTime = new Date(b.createdAt).getTime();
+    return sortOrder === "newest" ? bTime - aTime : aTime - bTime;
   });
 
   function toggleProvider(provider: Provider) {
@@ -203,7 +233,7 @@ export default function UsersPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-surface/60 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-baseline gap-2">
             <span className="text-lg font-semibold tracking-tight">
               Postmark
@@ -212,9 +242,16 @@ export default function UsersPage() {
               users
             </Badge>
           </div>
-          <span className="text-xs text-muted">
-            Prototype admin: manage users & accounts
-          </span>
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <Badge tone={healthStatus === "ok" ? "success" : "neutral"} soft>
+              {healthStatus === "loading"
+                ? "Checking..."
+                : healthStatus === "ok"
+                ? "API/DB: OK"
+                : "API/DB: Error"}
+            </Badge>
+            <span>Prototype admin: manage users & accounts</span>
+          </div>
         </div>
       </header>
 
@@ -286,14 +323,15 @@ export default function UsersPage() {
                     placeholder="e.g. company.com"
                   />
                 </div>
-                <Button
-                  onClick={saveView}
-                  disabled={savingView}
-                  variant="secondary"
-                  className="w-full sm:w-auto"
-                >
-                  {savingView ? "Saving..." : "Save view"}
-                </Button>
+                <div className="flex-1">
+                  <Label>Search (email or account)</Label>
+                  <Input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search users..."
+                  />
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs text-muted">
@@ -319,6 +357,31 @@ export default function UsersPage() {
                   ? "any"
                   : activeProviders.join(", ")}
               </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2 text-sm text-muted">
+                  <span>Sort:</span>
+                  <select
+                    value={sortOrder}
+                    onChange={(e) =>
+                      setSortOrder(e.target.value as "newest" | "oldest")
+                    }
+                    className="rounded-md border border-border bg-surface px-2 py-1 text-foreground"
+                  >
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                  </select>
+                </div>
+
+                <Button
+                  onClick={saveView}
+                  disabled={savingView}
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                >
+                  {savingView ? "Saving..." : "Save view"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -340,7 +403,7 @@ export default function UsersPage() {
               </CardContent>
             ) : (
               <CardContent className="divide-y divide-border/70">
-                {filteredUsers.map((user) => (
+                {sortedUsers.map((user) => (
                   <div key={user.id} className="py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
