@@ -8,6 +8,7 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
     include: {
       emailAccounts: true,
+      preference: true,
     },
   });
 
@@ -21,6 +22,11 @@ export async function GET() {
         provider: a.provider,
         emailAddress: a.emailAddress,
       })),
+      savedViews: ((u.preference?.savedViews as any) ?? []) as Array<{
+        name: string;
+        domain: string;
+        providers: string[];
+      }>,
     }))
   );
 }
@@ -53,5 +59,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
 
 

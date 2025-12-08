@@ -20,6 +20,11 @@ type User = {
   email: string;
   createdAt: string;
   accounts: Account[];
+  savedViews?: Array<{
+    name: string;
+    domain: string;
+    providers: string[];
+  }>;
 };
 
 export default function UsersPage() {
@@ -28,8 +33,15 @@ export default function UsersPage() {
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [accountBusy, setAccountBusy] = useState<string | null>(null);
-
+  const [savingView, setSavingView] = useState(false);
   const PROVIDERS = ["Gmail", "Outlook", "Other"] as const;
+  type Provider = (typeof PROVIDERS)[number];
+  const [filterDomain, setFilterDomain] = useState("");
+  const [activeProviders, setActiveProviders] = useState<Provider[]>([
+    "Gmail",
+    "Outlook",
+    "Other",
+  ]);
 
   async function loadUsers(showToast = false) {
     setLoading(true);
@@ -115,6 +127,79 @@ export default function UsersPage() {
     }
   }
 
+  function applySavedView(view: {
+    name: string;
+    domain: string;
+    providers: string[];
+  }) {
+    setFilterDomain(view.domain ?? "");
+    setActiveProviders(
+      (view.providers as Provider[]).filter((p) =>
+        PROVIDERS.includes(p as Provider)
+      )
+    );
+  }
+
+  async function saveView() {
+    if (!users[0]) {
+      toast.error("Create a user first to save a view.");
+      return;
+    }
+    const userId = users[0].id;
+    const view = {
+      name: "Saved view",
+      domain: filterDomain,
+      providers: activeProviders,
+    };
+    try {
+      setSavingView(true);
+      const res = await fetch("/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, view }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Could not save view.");
+      }
+      toast.success("View saved");
+      await loadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save view.");
+    } finally {
+      setSavingView(false);
+    }
+  }
+
+  const filteredUsers = users.filter((user) => {
+    const domainOk =
+      !filterDomain ||
+      user.email.toLowerCase().includes(filterDomain.toLowerCase()) ||
+      user.accounts.some((acc) =>
+        acc.emailAddress.toLowerCase().includes(filterDomain.toLowerCase())
+      );
+    const providerOk =
+      activeProviders.length === PROVIDERS.length ||
+      user.accounts.some((acc) =>
+        activeProviders.includes(acc.provider as Provider)
+      );
+    return domainOk && providerOk;
+  });
+
+  function toggleProvider(provider: Provider) {
+    const exists = activeProviders.includes(provider);
+    if (exists) {
+      setActiveProviders(activeProviders.filter((p) => p !== provider));
+    } else {
+      setActiveProviders([...activeProviders, provider]);
+    }
+  }
+
+  function clearFilters() {
+    setFilterDomain("");
+    setActiveProviders(PROVIDERS.slice() as Provider[]);
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-surface/60 backdrop-blur">
@@ -177,11 +262,72 @@ export default function UsersPage() {
           </Card>
 
           <Card className="border-border bg-surface">
+            <CardContent className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Filters & saved views
+                </div>
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-muted underline-offset-4 hover:text-primary hover:underline"
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex-1">
+                  <Label>Domain filter</Label>
+                  <Input
+                    type="text"
+                    value={filterDomain}
+                    onChange={(e) => setFilterDomain(e.target.value)}
+                    placeholder="e.g. company.com"
+                  />
+                </div>
+                <Button
+                  onClick={saveView}
+                  disabled={savingView}
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                >
+                  {savingView ? "Saving..." : "Save view"}
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs text-muted">
+                {PROVIDERS.map((provider) => (
+                  <label
+                    key={provider}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-strong px-2 py-1"
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-3 w-3 rounded border-border bg-surface"
+                      checked={activeProviders.includes(provider)}
+                      onChange={() => toggleProvider(provider)}
+                    />
+                    <span>{provider}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="text-[11px] text-muted">
+                Showing users with providers:{" "}
+                {activeProviders.length === PROVIDERS.length
+                  ? "any"
+                  : activeProviders.join(", ")}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-surface">
             <CardHeader className="border-border/60">
               <CardTitle className="flex items-center justify-between text-xs uppercase tracking-wide text-muted">
                 <span>Existing users</span>
                 <span className="text-muted">
-                  {loading ? "Loading..." : `${users.length} total`}
+                  {loading ? "Loading..." : `${filteredUsers.length} shown`}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -194,7 +340,7 @@ export default function UsersPage() {
               </CardContent>
             ) : (
               <CardContent className="divide-y divide-border/70">
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <div key={user.id} className="py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -254,6 +400,21 @@ export default function UsersPage() {
                             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                             {acc.provider} · {acc.emailAddress}
                           </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {user.savedViews && user.savedViews.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
+                        {user.savedViews.map((view) => (
+                          <button
+                            key={`${user.id}-${view.name}`}
+                            onClick={() => applySavedView(view)}
+                            className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-strong px-2 py-1 text-foreground/80 transition hover:border-primary hover:text-primary"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                            {view.name}
+                          </button>
                         ))}
                       </div>
                     )}

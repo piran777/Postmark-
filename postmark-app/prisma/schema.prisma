@@ -12,6 +12,7 @@ model User {
   email         String         @unique
   createdAt     DateTime       @default(now())
   emailAccounts EmailAccount[]
+  preference    UserPreference?
 }
 
 model EmailAccount {
@@ -24,6 +25,16 @@ model EmailAccount {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, provider])
+}
+
+model UserPreference {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  savedViews  Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 
