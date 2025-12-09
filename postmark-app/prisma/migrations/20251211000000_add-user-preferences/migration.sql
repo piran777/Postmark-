@@ -15,3 +15,4 @@ CREATE UNIQUE INDEX "UserPreference_userId_key" ON "UserPreference"("userId");
 -- AddForeignKey
 ALTER TABLE "UserPreference" ADD CONSTRAINT "UserPreference_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+
