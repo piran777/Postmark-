@@ -60,6 +60,15 @@ function SignInForm() {
             {loading ? "Signing in..." : "Sign in"}
           </Button>
         </form>
+        <div className="pt-2 text-center text-xs text-muted">or</div>
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full"
+          onClick={() => signIn("google", { callbackUrl: "/users" })}
+        >
+          Sign in with Google
+        </Button>
       </CardContent>
     </Card>
   );

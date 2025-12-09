@@ -1,10 +1,21 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 export const authOptions: NextAuthOptions = {
   providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          scope:
+            "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+        },
+      },
+    }),
     CredentialsProvider({
       name: "Credentials",
       credentials: {
