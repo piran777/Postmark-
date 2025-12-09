@@ -1,9 +1,8 @@
-.env
-< br />
-DATABASE_URL=postgresql:"Connection string"
-< br />
+### .env
+
+```env
+DATABASE_URL="postgresql://your-connection-string"
 ADMIN_PASSWORD="YOUR_PASSWORD"
-< br />
 NEXTAUTH_SECRET="GENERATE_TOKEN"
-< br />
 NEXTAUTH_URL=""
+```
