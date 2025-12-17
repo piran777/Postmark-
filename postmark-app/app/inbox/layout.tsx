@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
-export default async function UsersLayout({
+export default async function InboxLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -13,7 +13,5 @@ export default async function UsersLayout({
   }
   return <>{children}</>;
 }
-
-
 
 
