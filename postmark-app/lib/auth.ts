@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
+import prisma from "@/lib/prisma";
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
@@ -11,8 +12,9 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          scope:
-            "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+          scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+          access_type: "offline",
+          prompt: "consent",
         },
       },
     }),
@@ -42,6 +44,52 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: "/auth/signin",
+  },
+  events: {
+    // When connecting Google, persist tokens into EmailAccount and ensure a User exists.
+    async signIn({ user, account }) {
+      if (account?.provider === "google") {
+        const email = account.email || user.email;
+        if (!email) return;
+
+        const dbUser = await prisma.user.upsert({
+          where: { email },
+          update: {},
+          create: { email },
+        });
+
+        await prisma.emailAccount.upsert({
+          where: {
+            userId_provider: {
+              userId: dbUser.id,
+              provider: "google",
+            },
+          },
+          create: {
+            userId: dbUser.id,
+            provider: "google",
+            emailAddress: email,
+            accessToken: account.access_token ?? null,
+            refreshToken: account.refresh_token ?? null,
+            expiresAt: account.expires_at
+              ? new Date(account.expires_at * 1000)
+              : null,
+            scope: account.scope ?? null,
+            tokenType: account.token_type ?? null,
+          },
+          update: {
+            // Only overwrite fields we actually received in this sign-in event.
+            ...(account.access_token ? { accessToken: account.access_token } : {}),
+            ...(account.refresh_token ? { refreshToken: account.refresh_token } : {}),
+            ...(typeof account.expires_at === "number"
+              ? { expiresAt: new Date(account.expires_at * 1000) }
+              : {}),
+            ...(account.scope ? { scope: account.scope } : {}),
+            ...(account.token_type ? { tokenType: account.token_type } : {}),
+          },
+        });
+      }
+    },
   },
   callbacks: {
     async jwt({ token, user }) {

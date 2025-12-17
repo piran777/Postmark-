@@ -65,7 +65,18 @@ function SignInForm() {
           type="button"
           variant="secondary"
           className="w-full"
-          onClick={() => signIn("google", { callbackUrl: "/users" })}
+          onClick={() =>
+            signIn(
+              "google",
+              { callbackUrl: "/users" },
+              {
+                scope:
+                  "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+                prompt: "consent",
+                access_type: "offline",
+              }
+            )
+          }
         >
           Sign in with Google
         </Button>
