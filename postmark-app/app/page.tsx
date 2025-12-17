@@ -63,7 +63,7 @@ export default function Home() {
             <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
               All your email,{" "}
               <span className="text-primary">one calm inbox.</span>
-            </h1>
+          </h1>
             <p className="max-w-xl text-base text-muted">
               Postmark is a unified inbox for people with too many email
               accounts. See Gmail, Outlook and more in one modern dashboard,
@@ -102,7 +102,7 @@ export default function Home() {
                 </CardContent>
               </Card>
             ))}
-          </div>
+        </div>
         </section>
 
         <section className="flex-1">
@@ -161,7 +161,7 @@ export default function Home() {
                     <span className="text-[11px] text-muted">{item.time}</span>
                   </div>
                 ))}
-              </div>
+        </div>
 
               <p className="text-[11px] text-muted">
                 This is a visual prototype. Next: wire to real Gmail/Outlook and

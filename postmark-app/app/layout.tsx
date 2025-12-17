@@ -55,7 +55,7 @@ export default function RootLayout({
           <div className="fixed right-4 top-4 z-40">
             <ThemeToggle />
           </div>
-          {children}
+        {children}
           <AppToaster />
         </Providers>
       </body>
