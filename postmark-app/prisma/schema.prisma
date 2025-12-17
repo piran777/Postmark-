@@ -1,6 +1,7 @@
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 generator client {
@@ -12,6 +13,7 @@ model User {
   email         String         @unique
   createdAt     DateTime       @default(now())
   emailAccounts EmailAccount[]
+  messages      Message[]
   preference    UserPreference?
 }
 
@@ -21,10 +23,41 @@ model EmailAccount {
   emailAddress String
   userId       String
   createdAt    DateTime @default(now())
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  scope        String?
+  tokenType    String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
 
   @@unique([userId, provider])
+}
+
+model Message {
+  id                 String   @id @default(uuid())
+  userId             String
+  emailAccountId     String
+  provider           String
+  providerMessageId  String
+  threadId           String?
+  subject            String?
+  fromAddress        String?
+  toAddress          String?
+  date               DateTime?
+  snippet            String?
+  labels             Json?
+  isRead             Boolean  @default(false)
+  isArchived         Boolean  @default(false)
+  syncedAt           DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAccount  EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerMessageId])
+  @@index([userId, provider])
 }
 
 model UserPreference {
