@@ -6,3 +6,4 @@ ADD CONSTRAINT "EmailAccount_userId_provider_key" UNIQUE ("userId", "provider");
 
 
 
+
