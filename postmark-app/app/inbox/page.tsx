@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 
 type Message = {
   id: string;
@@ -21,18 +22,69 @@ export default function InboxPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(25);
+  const [hasMore, setHasMore] = useState(false);
 
-  async function loadMessages() {
+  const [provider, setProvider] = useState<string>("all");
+  const [readFilter, setReadFilter] = useState<"all" | "read" | "unread">("all");
+  const [archiveFilter, setArchiveFilter] = useState<"inbox" | "archived" | "all">(
+    "inbox"
+  );
+
+  function FilterPill(props: {
+    selected: boolean;
+    children: React.ReactNode;
+    onClick: () => void;
+    disabled?: boolean;
+  }) {
+    return (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        aria-pressed={props.selected}
+        onClick={props.onClick}
+        disabled={props.disabled}
+        className={cn(
+          "h-8 rounded-full px-3 text-xs font-semibold",
+          props.selected &&
+            "border-border-strong bg-surface-strong shadow-sm hover:bg-surface-strong"
+        )}
+      >
+        {props.children}
+      </Button>
+    );
+  }
+
+  function buildQuery(nextPage: number) {
+    const params = new URLSearchParams();
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
+    if (provider !== "all") params.set("provider", provider);
+    if (readFilter === "read") params.set("isRead", "true");
+    if (readFilter === "unread") params.set("isRead", "false");
+    if (archiveFilter === "inbox") params.set("isArchived", "false");
+    if (archiveFilter === "archived") params.set("isArchived", "true");
+    return params.toString();
+  }
+
+  async function loadMessages(opts?: { reset?: boolean; page?: number }) {
+    const reset = opts?.reset ?? false;
+    const nextPage = opts?.page ?? (reset ? 1 : page);
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/messages");
+      const res = await fetch(`/api/messages?${buildQuery(nextPage)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error || "Failed to load messages");
       }
       const data = await res.json();
-      setMessages(data.items || []);
+      const nextItems = (data.items || []) as Message[];
+      setHasMore(Boolean(data.hasMore));
+      setPage(Number(data.page || nextPage));
+      setMessages((prev) => (reset ? nextItems : [...prev, ...nextItems]));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load messages");
     } finally {
@@ -49,7 +101,7 @@ export default function InboxPage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error || "Sync failed");
       }
-      await loadMessages();
+      await loadMessages({ reset: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
     } finally {
@@ -75,8 +127,11 @@ export default function InboxPage() {
   }
 
   useEffect(() => {
-    loadMessages();
-  }, []);
+    setPage(1);
+    setMessages([]);
+    loadMessages({ reset: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, readFilter, archiveFilter]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -89,7 +144,12 @@ export default function InboxPage() {
             </Badge>
           </div>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={loadMessages} disabled={loading}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => loadMessages({ reset: true })}
+              disabled={loading}
+            >
               Refresh
             </Button>
             <Button variant="secondary" size="sm" onClick={disconnectGmail} disabled={loading}>
@@ -103,6 +163,81 @@ export default function InboxPage() {
       </header>
 
       <main className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:px-6">
+        <Card className="border-border bg-surface">
+          <CardHeader className="border-border/60">
+            <CardTitle className="text-sm font-semibold text-muted">Filters</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">Provider</span>
+              <FilterPill
+                selected={provider === "all"}
+                onClick={() => setProvider("all")}
+                disabled={loading}
+              >
+                All
+              </FilterPill>
+              <FilterPill
+                selected={provider === "google"}
+                onClick={() => setProvider("google")}
+                disabled={loading}
+              >
+                Gmail
+              </FilterPill>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">Status</span>
+              <FilterPill
+                selected={readFilter === "all"}
+                onClick={() => setReadFilter("all")}
+                disabled={loading}
+              >
+                All
+              </FilterPill>
+              <FilterPill
+                selected={readFilter === "unread"}
+                onClick={() => setReadFilter("unread")}
+                disabled={loading}
+              >
+                Unread
+              </FilterPill>
+              <FilterPill
+                selected={readFilter === "read"}
+                onClick={() => setReadFilter("read")}
+                disabled={loading}
+              >
+                Read
+              </FilterPill>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">Folder</span>
+              <FilterPill
+                selected={archiveFilter === "inbox"}
+                onClick={() => setArchiveFilter("inbox")}
+                disabled={loading}
+              >
+                Inbox
+              </FilterPill>
+              <FilterPill
+                selected={archiveFilter === "archived"}
+                onClick={() => setArchiveFilter("archived")}
+                disabled={loading}
+              >
+                Archived
+              </FilterPill>
+              <FilterPill
+                selected={archiveFilter === "all"}
+                onClick={() => setArchiveFilter("all")}
+                disabled={loading}
+              >
+                All
+              </FilterPill>
+            </div>
+          </CardContent>
+        </Card>
+
         {error && (
           <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
             {error}
@@ -154,6 +289,33 @@ export default function InboxPage() {
             </CardContent>
           </Card>
         )}
+
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-muted">
+            Page {page}
+            {hasMore ? "" : " • End"}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => loadMessages({ reset: true })}
+              disabled={loading}
+            >
+              Reload
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                const next = page + 1;
+                loadMessages({ page: next });
+              }}
+              disabled={loading || !hasMore}
+            >
+              Load more
+            </Button>
+          </div>
+        </div>
       </main>
     </div>
   );
