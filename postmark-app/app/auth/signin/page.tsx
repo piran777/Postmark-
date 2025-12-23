@@ -71,7 +71,7 @@ function SignInForm() {
               { callbackUrl: "/users" },
               {
                 scope:
-                  "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+                  "openid email profile https://www.googleapis.com/auth/gmail.modify",
                 prompt: "consent",
                 access_type: "offline",
               }

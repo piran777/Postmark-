@@ -136,7 +136,7 @@ export async function POST() {
       return Response.json(
         {
           error:
-            "Gmail permission not granted. In Google Cloud Console, add the gmail.readonly scope to your OAuth consent screen, then revoke the app in your Google Account and sign in again.",
+            "Gmail permission not granted. Reconnect and approve Gmail access. If you recently upgraded scopes (e.g. to gmail.modify), you must revoke the app in your Google Account and sign in again to refresh the granted scopes.",
           detail: msg,
           hasRefreshToken: Boolean(account.refreshToken),
           storedAccountScope: account.scope ?? null,

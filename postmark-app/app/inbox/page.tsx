@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -109,6 +110,31 @@ export default function InboxPage() {
     }
   }
 
+  async function actOnMessage(messageId: string, action: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/messages/${messageId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Action failed");
+      }
+      const data = await res.json();
+      const updated = data.item as Message | undefined;
+      if (updated?.id) {
+        setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function disconnectGmail() {
     setLoading(true);
     setError(null);
@@ -151,6 +177,9 @@ export default function InboxPage() {
               disabled={loading}
             >
               Refresh
+            </Button>
+            <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex">
+              <Link href="/api/auth/signout?callbackUrl=/auth/signin">Sign out</Link>
             </Button>
             <Button variant="secondary" size="sm" onClick={disconnectGmail} disabled={loading}>
               Disconnect Gmail
@@ -269,9 +298,33 @@ export default function InboxPage() {
                         {m.subject || "(No subject)"}
                       </span>
                     </div>
-                    <span className="text-xs text-muted">
-                      {m.date ? new Date(m.date).toLocaleString() : ""}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted">
+                        {m.date ? new Date(m.date).toLocaleString() : ""}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={loading}
+                        onClick={() =>
+                          actOnMessage(m.id, m.isRead ? "markUnread" : "markRead")
+                        }
+                        className="h-8 px-2 text-xs"
+                      >
+                        {m.isRead ? "Mark unread" : "Mark read"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={loading}
+                        onClick={() =>
+                          actOnMessage(m.id, m.isArchived ? "unarchive" : "archive")
+                        }
+                        className="h-8 px-2 text-xs"
+                      >
+                        {m.isArchived ? "Move to inbox" : "Archive"}
+                      </Button>
+                    </div>
                   </div>
                   <div className="text-xs text-muted">
                     {m.fromAddress} → {m.toAddress}
