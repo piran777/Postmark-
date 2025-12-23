@@ -28,6 +28,8 @@ model EmailAccount {
   expiresAt    DateTime?
   scope        String?
   tokenType    String?
+  lastSyncedAt DateTime?
+  lastSyncError String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]

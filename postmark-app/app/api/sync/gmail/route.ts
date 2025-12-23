@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { google } from "googleapis";
+import { NextRequest } from "next/server";
 
 function gmailAuth(accessToken?: string, refreshToken?: string) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -18,7 +19,7 @@ function gmailAuth(accessToken?: string, refreshToken?: string) {
   return oauth2Client;
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -49,7 +50,18 @@ export async function POST() {
     );
   }
 
+  // Some environments may be running an older generated Prisma Client.
+  // Access these defensively so sync doesn't hard-crash.
+  const lastSyncedAt = (account as any).lastSyncedAt as Date | undefined | null;
+
   try {
+    const url = new URL(req.url);
+    const mode = (url.searchParams.get("mode") || "delta").toLowerCase();
+    const maxResults = Math.min(
+      50,
+      Math.max(1, Number(url.searchParams.get("maxResults") || "25") || 25)
+    );
+
     const oauth2Client = gmailAuth(
       account.accessToken ?? undefined,
       account.refreshToken ?? undefined
@@ -57,11 +69,21 @@ export async function POST() {
 
     const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
-    // List recent messages
+    // Delta sync: only fetch messages after our last successful sync.
+    // Full sync: ignore lastSyncedAt and just fetch the latest.
+    const after =
+      mode === "full" || !lastSyncedAt
+        ? null
+        : Math.floor(new Date(lastSyncedAt).getTime() / 1000);
+
+    const q = after ? `after:${after}` : undefined;
+
+    // List messages
     const listRes = await gmail.users.messages.list({
       userId: "me",
-      maxResults: 10,
+      maxResults,
       labelIds: ["INBOX"],
+      q,
     });
 
     const messages = listRes.data.messages || [];
@@ -126,10 +148,40 @@ export async function POST() {
       });
     }
 
-    return Response.json({ synced: messages.length });
+    // Persist delta-sync cursor + clear last error (best effort).
+    try {
+      await prisma.emailAccount.update({
+        where: { id: account.id },
+        data: {
+          lastSyncedAt: new Date(),
+          lastSyncError: null,
+        },
+      });
+    } catch (e) {
+      // If Prisma Client is out of date (unknown args), don't break sync.
+      console.warn("Unable to persist sync state; run prisma generate.", e);
+    }
+
+    return Response.json({
+      synced: messages.length,
+      mode,
+      maxResults,
+      since: lastSyncedAt ?? null,
+      query: q ?? null,
+    });
   } catch (error: any) {
     const msg = String(error?.message || "");
     const code = error?.code ?? error?.status ?? error?.response?.status;
+
+    // Best-effort error persistence; never crash the request due to logging.
+    try {
+      await prisma.emailAccount.update({
+        where: { id: account.id },
+        data: { lastSyncError: msg },
+      });
+    } catch (e) {
+      console.warn("Unable to persist sync error; run prisma generate.", e);
+    }
 
     // Common case when Google didn't grant Gmail scope
     if (code === 403 && msg.toLowerCase().includes("insufficient authentication scopes")) {

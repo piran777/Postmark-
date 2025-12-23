@@ -19,10 +19,19 @@ type Message = {
   snippet: string | null;
 };
 
+type SyncInfo = {
+  synced?: number;
+  mode?: string;
+  maxResults?: number;
+  since?: string | null;
+  query?: string | null;
+};
+
 export default function InboxPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<SyncInfo | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(25);
   const [hasMore, setHasMore] = useState(false);
@@ -97,11 +106,15 @@ export default function InboxPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/sync/gmail", { method: "POST" });
+      const res = await fetch("/api/sync/gmail?mode=delta&maxResults=25", {
+        method: "POST",
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error || "Sync failed");
       }
+      const info = (await res.json().catch(() => null)) as SyncInfo | null;
+      if (info) setLastSync(info);
       await loadMessages({ reset: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
@@ -168,6 +181,11 @@ export default function InboxPage() {
             <Badge tone="success" soft>
               prototype
             </Badge>
+            {lastSync?.since && (
+              <span className="hidden text-xs text-muted sm:inline">
+                Last sync: {new Date(lastSync.since).toLocaleString()}
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
             <Button
