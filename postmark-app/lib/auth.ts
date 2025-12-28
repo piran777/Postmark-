@@ -49,8 +49,8 @@ export const authOptions: NextAuthOptions = {
     // When connecting Google, persist tokens into EmailAccount and ensure a User exists.
     async signIn({ user, account }) {
       if (account?.provider === "google") {
-        const email = account.email || user.email;
-        if (!email) return;
+        const email = user.email;
+        if (typeof email !== "string" || !email) return;
 
         const dbUser = await prisma.user.upsert({
           where: { email },

@@ -30,6 +30,8 @@ model EmailAccount {
   tokenType    String?
   lastSyncedAt DateTime?
   lastSyncError String?
+  // Gmail History API cursor for true delta sync (stringified numeric historyId).
+  gmailHistoryId String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]

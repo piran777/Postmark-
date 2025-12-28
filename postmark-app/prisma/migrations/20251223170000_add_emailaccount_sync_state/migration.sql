@@ -3,3 +3,4 @@ ALTER TABLE "EmailAccount" ADD COLUMN "lastSyncedAt" TIMESTAMP(3);
 ALTER TABLE "EmailAccount" ADD COLUMN "lastSyncError" TEXT;
 
 
+

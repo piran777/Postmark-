@@ -21,10 +21,18 @@ type Message = {
 
 type SyncInfo = {
   synced?: number;
+  deleted?: number;
   mode?: string;
+  usedMode?: string;
+  fallback?: boolean;
   maxResults?: number;
   since?: string | null;
   query?: string | null;
+  history?: {
+    previous?: string | null;
+    mailbox?: string | null;
+    stored?: string | null;
+  };
 };
 
 export default function InboxPage() {
@@ -184,6 +192,16 @@ export default function InboxPage() {
             {lastSync?.since && (
               <span className="hidden text-xs text-muted sm:inline">
                 Last sync: {new Date(lastSync.since).toLocaleString()}
+              </span>
+            )}
+            {lastSync && (
+              <span className="hidden text-xs text-muted sm:inline">
+                • {lastSync.usedMode === "history" ? "Delta" : "Refresh"} • synced{" "}
+                {lastSync.synced ?? 0}
+                {typeof lastSync.deleted === "number" && lastSync.deleted > 0
+                  ? ` • deleted ${lastSync.deleted}`
+                  : ""}
+                {lastSync.fallback ? " • fallback" : ""}
               </span>
             )}
           </div>
