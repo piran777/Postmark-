@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 const PROVIDERS = ["Gmail", "Outlook", "Other"] as const;
 type Provider = (typeof PROVIDERS)[number];
@@ -12,7 +14,18 @@ function normalizeProvider(value: unknown): Provider | null {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const userId = searchParams.get("userId") ?? undefined;
+  const me = searchParams.get("me") === "true";
+  let userId = searchParams.get("userId") ?? undefined;
+
+  if (me) {
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email;
+    if (!email) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    userId = user?.id;
+  }
   const provider = searchParams.get("provider");
   const normalizedProvider = provider ? normalizeProvider(provider) : null;
 
@@ -29,6 +42,7 @@ export async function GET(req: NextRequest) {
       id: a.id,
       userId: a.userId,
       provider: a.provider,
+      providerAccountId: (a as any).providerAccountId ?? null,
       emailAddress: a.emailAddress,
       createdAt: a.createdAt,
     }))

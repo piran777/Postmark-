@@ -45,11 +45,15 @@ export async function GET(req: NextRequest) {
         .filter(Boolean)
     : [];
 
+  const emailAccountId = url.searchParams.get("emailAccountId");
   const isRead = parseBool(url.searchParams.get("isRead"));
   const isArchived = parseBool(url.searchParams.get("isArchived"));
 
   const where: Prisma.MessageWhereInput = {
     userId: user.id,
+    ...(typeof emailAccountId === "string" && emailAccountId.length
+      ? { emailAccountId }
+      : {}),
     ...(providers.length ? { provider: { in: providers } } : {}),
     ...(typeof isRead === "boolean" ? { isRead } : {}),
     ...(typeof isArchived === "boolean" ? { isArchived } : {}),

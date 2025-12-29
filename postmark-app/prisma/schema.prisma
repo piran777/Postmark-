@@ -20,6 +20,9 @@ model User {
 model EmailAccount {
   id           String   @id @default(uuid())
   provider     String
+  // Stable ID from the OAuth provider (e.g. Google sub / providerAccountId).
+  // Nullable for mocked/manual accounts.
+  providerAccountId String?
   emailAddress String
   userId       String
   createdAt    DateTime @default(now())
@@ -36,7 +39,11 @@ model EmailAccount {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
 
-  @@unique([userId, provider])
+  // Allow multiple accounts per provider per user (e.g. multiple Gmail mailboxes),
+  // while preventing duplicates.
+  @@unique([userId, provider, emailAddress])
+  // Prevent the same OAuth account being connected multiple times (across all users).
+  @@unique([provider, providerAccountId])
 }
 
 model Message {
@@ -60,7 +67,8 @@ model Message {
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   emailAccount  EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
 
-  @@unique([provider, providerMessageId])
+  // Provider IDs are only unique within a mailbox/account.
+  @@unique([emailAccountId, providerMessageId])
   @@index([userId, provider])
 }
 

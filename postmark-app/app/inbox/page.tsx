@@ -19,6 +19,12 @@ type Message = {
   snippet: string | null;
 };
 
+type EmailAccount = {
+  id: string;
+  provider: string;
+  emailAddress: string;
+};
+
 type SyncInfo = {
   synced?: number;
   deleted?: number;
@@ -37,6 +43,8 @@ type SyncInfo = {
 
 export default function InboxPage() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [accounts, setAccounts] = useState<EmailAccount[]>([]);
+  const [accountId, setAccountId] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<SyncInfo | null>(null);
@@ -80,11 +88,28 @@ export default function InboxPage() {
     params.set("page", String(nextPage));
     params.set("pageSize", String(pageSize));
     if (provider !== "all") params.set("provider", provider);
+    if (accountId !== "all") params.set("emailAccountId", accountId);
     if (readFilter === "read") params.set("isRead", "true");
     if (readFilter === "unread") params.set("isRead", "false");
     if (archiveFilter === "inbox") params.set("isArchived", "false");
     if (archiveFilter === "archived") params.set("isArchived", "true");
     return params.toString();
+  }
+
+  async function loadAccounts() {
+    try {
+      const res = await fetch("/api/accounts?me=true");
+      if (!res.ok) return;
+      const data = (await res.json().catch(() => [])) as any[];
+      const list: EmailAccount[] = (data || []).map((a) => ({
+        id: String(a.id),
+        provider: String(a.provider),
+        emailAddress: String(a.emailAddress),
+      }));
+      setAccounts(list);
+    } catch {
+      // ignore
+    }
   }
 
   async function loadMessages(opts?: { reset?: boolean; page?: number }) {
@@ -114,7 +139,12 @@ export default function InboxPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/sync/gmail?mode=delta&maxResults=25", {
+      const params = new URLSearchParams();
+      params.set("mode", "delta");
+      params.set("maxResults", "25");
+      if (accountId !== "all") params.set("emailAccountId", accountId);
+
+      const res = await fetch(`/api/sync/gmail?${params.toString()}`, {
         method: "POST",
       });
       if (!res.ok) {
@@ -178,7 +208,11 @@ export default function InboxPage() {
     setMessages([]);
     loadMessages({ reset: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, readFilter, archiveFilter]);
+  }, [provider, readFilter, archiveFilter, accountId]);
+
+  useEffect(() => {
+    loadAccounts();
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -233,6 +267,27 @@ export default function InboxPage() {
             <CardTitle className="text-sm font-semibold text-muted">Filters</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">Account</span>
+              <FilterPill
+                selected={accountId === "all"}
+                onClick={() => setAccountId("all")}
+                disabled={loading}
+              >
+                All
+              </FilterPill>
+              {accounts.map((a) => (
+                <FilterPill
+                  key={a.id}
+                  selected={accountId === a.id}
+                  onClick={() => setAccountId(a.id)}
+                  disabled={loading}
+                >
+                  {a.provider === "google" ? "Gmail" : a.provider}: {a.emailAddress}
+                </FilterPill>
+              ))}
+            </div>
+
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted">Provider</span>
               <FilterPill

@@ -64,7 +64,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const account = user.emailAccounts[0];
+  const url = new URL(req.url);
+  const requestedAccountId = url.searchParams.get("emailAccountId");
+  const account = requestedAccountId
+    ? user.emailAccounts.find((a) => a.id === requestedAccountId)
+    : user.emailAccounts
+        .slice()
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .find((a) => Boolean(a.refreshToken || a.accessToken)) ?? user.emailAccounts[0];
+  if (!account) {
+    return Response.json({ error: "Account not found" }, { status: 404 });
+  }
+  const emailAccountId = account.id;
   const userId = user.id;
   if (!account.refreshToken && !account.accessToken) {
     return Response.json(
@@ -82,7 +93,6 @@ export async function POST(req: NextRequest) {
     | null;
 
   try {
-    const url = new URL(req.url);
     const mode = (url.searchParams.get("mode") || "delta").toLowerCase();
     const maxResults = Math.min(
       50,
@@ -122,14 +132,14 @@ export async function POST(req: NextRequest) {
 
       await prisma.message.upsert({
         where: {
-          provider_providerMessageId: {
-            provider: "google",
+          emailAccountId_providerMessageId: {
+            emailAccountId,
             providerMessageId,
           },
         },
         create: {
           userId,
-          emailAccountId: account.id,
+          emailAccountId,
           provider: "google",
           providerMessageId,
           threadId: full.data.threadId ?? null,
@@ -249,6 +259,7 @@ export async function POST(req: NextRequest) {
               where: {
                 userId,
                 provider: "google",
+              emailAccountId,
                 providerMessageId: { in: ids },
               },
             });

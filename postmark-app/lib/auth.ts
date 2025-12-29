@@ -51,6 +51,8 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider === "google") {
         const email = user.email;
         if (typeof email !== "string" || !email) return;
+        const providerAccountId = account.providerAccountId;
+        if (typeof providerAccountId !== "string" || !providerAccountId) return;
 
         const dbUser = await prisma.user.upsert({
           where: { email },
@@ -60,14 +62,15 @@ export const authOptions: NextAuthOptions = {
 
         await prisma.emailAccount.upsert({
           where: {
-            userId_provider: {
-              userId: dbUser.id,
+            provider_providerAccountId: {
               provider: "google",
+              providerAccountId,
             },
           },
           create: {
             userId: dbUser.id,
             provider: "google",
+            providerAccountId,
             emailAddress: email,
             accessToken: account.access_token ?? null,
             refreshToken: account.refresh_token ?? null,
@@ -78,6 +81,8 @@ export const authOptions: NextAuthOptions = {
             tokenType: account.token_type ?? null,
           },
           update: {
+            userId: dbUser.id,
+            emailAddress: email,
             // Only overwrite fields we actually received in this sign-in event.
             ...(account.access_token ? { accessToken: account.access_token } : {}),
             ...(account.refresh_token ? { refreshToken: account.refresh_token } : {}),
