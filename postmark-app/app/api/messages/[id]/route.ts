@@ -6,6 +6,53 @@ import { google } from "googleapis";
 
 type Action = "markRead" | "markUnread" | "archive" | "unarchive";
 
+export async function GET(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await ctx.params;
+  const user = await prisma.user.findUnique({
+    where: { email: session.user.email },
+    select: { id: true },
+  });
+  if (!user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const msg = await prisma.message.findFirst({
+    where: { id, userId: user.id },
+    include: {
+      emailAccount: { select: { id: true, provider: true, emailAddress: true } },
+    },
+  });
+  if (!msg) {
+    return Response.json({ error: "Message not found" }, { status: 404 });
+  }
+
+  return Response.json({
+    item: {
+      id: msg.id,
+      provider: msg.provider,
+      subject: msg.subject,
+      fromAddress: msg.fromAddress,
+      toAddress: msg.toAddress,
+      date: msg.date,
+      snippet: msg.snippet,
+      isRead: msg.isRead,
+      isArchived: msg.isArchived,
+      labels: msg.labels,
+      providerMessageId: msg.providerMessageId,
+      threadId: msg.threadId,
+      emailAccount: msg.emailAccount,
+    },
+  });
+}
+
 function gmailAuth(accessToken?: string, refreshToken?: string) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;

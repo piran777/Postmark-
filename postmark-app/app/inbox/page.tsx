@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { Archive, Inbox, Mail, MailOpen } from "lucide-react";
 
 type Message = {
   id: string;
@@ -57,7 +59,19 @@ type SyncInfo = {
   };
 };
 
+function parseFrom(raw: string | null | undefined): { display: string; avatar: string } {
+  const text = String(raw || "").trim();
+  if (!text) return { display: "Unknown", avatar: "?" };
+  const angle = text.match(/^(.*)<([^>]+)>$/);
+  const name = angle?.[1]?.trim().replace(/^"(.+)"$/, "$1");
+  const email = angle?.[2]?.trim();
+  const display = (name && name.length ? name : email) || text;
+  const first = (display.trim()[0] || "?").toUpperCase();
+  return { display, avatar: first };
+}
+
 export default function InboxPage() {
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("all");
@@ -93,6 +107,28 @@ export default function InboxPage() {
           props.selected &&
             "border-border-strong bg-surface-strong shadow-sm hover:bg-surface-strong"
         )}
+      >
+        {props.children}
+      </Button>
+    );
+  }
+
+  function IconPillButton(props: {
+    label: string;
+    onClick: (e: React.MouseEvent) => void;
+    disabled?: boolean;
+    children: React.ReactNode;
+  }) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        title={props.label}
+        aria-label={props.label}
+        disabled={props.disabled}
+        onClick={props.onClick}
+        className="h-9 w-9 rounded-full p-0"
       >
         {props.children}
       </Button>
@@ -297,7 +333,7 @@ export default function InboxPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-surface/60 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-baseline gap-2">
             <span className="text-lg font-semibold tracking-tight">Inbox</span>
             <Badge tone="success" soft>
@@ -362,7 +398,7 @@ export default function InboxPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:px-6">
+      <main className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6">
         <Card className="border-border bg-surface">
           <CardHeader className="border-border/60">
             <CardTitle className="text-sm font-semibold text-muted">Filters</CardTitle>
@@ -472,70 +508,126 @@ export default function InboxPage() {
             No messages yet. Connect Gmail and run sync.
           </div>
         ) : (
-          <Card className="border-border bg-surface">
-            <CardHeader className="border-border/60">
-              <CardTitle className="text-sm font-semibold text-muted">
+          <div className="rounded-2xl border border-border bg-surface shadow-sm">
+            <div className="flex items-center justify-between border-b border-border/70 px-5 py-3 sm:px-6">
+              <div className="text-sm font-semibold text-muted">
                 {messages.length} messages
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="divide-y divide-border/70">
-              {messages.map((m) => (
-                <div key={m.id} className="flex flex-col gap-1 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Badge tone="info" soft>
-                        {m.provider}
-                      </Badge>
-                      <Link
-                        href={`/inbox/${m.id}`}
-                        className="text-sm font-medium text-foreground hover:underline"
-                      >
-                        {m.subject || "(No subject)"}
-                      </Link>
+              </div>
+              <div className="hidden text-xs text-muted sm:block">
+                Click a row to open • Hover for actions
+              </div>
+            </div>
+
+            <div className="divide-y divide-border/70">
+              {messages.map((m) => {
+                const from = parseFrom(m.fromAddress);
+                const dateText = m.date ? new Date(m.date).toLocaleString() : "";
+                const providerLabel = m.provider === "google" ? "Gmail" : m.provider;
+
+                return (
+                  <div
+                    key={m.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => router.push(`/inbox/${m.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") router.push(`/inbox/${m.id}`);
+                    }}
+                    className={cn(
+                      "group flex cursor-pointer items-center gap-3 px-5 py-3 outline-none transition-colors hover:bg-surface-strong sm:px-6",
+                      !m.isRead && "bg-background/30"
+                    )}
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-sm font-semibold text-foreground">
+                      {from.avatar}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted">
-                        {m.date ? new Date(m.date).toLocaleString() : ""}
+
+                    <div className="min-w-0 flex-1">
+                      {/* Gmail-ish column layout: sender | subject+preview */}
+                      <div className="grid min-w-0 grid-cols-1 items-baseline gap-2 sm:grid-cols-[220px_1fr] lg:grid-cols-[260px_1fr]">
+                        <span
+                          className={cn(
+                            "truncate text-sm",
+                            m.isRead ? "text-foreground/80" : "font-semibold text-foreground"
+                          )}
+                        >
+                          {from.display}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 items-baseline gap-2">
+                            <span
+                              className={cn(
+                                "truncate text-sm",
+                                m.isRead
+                                  ? "text-foreground/80"
+                                  : "font-semibold text-foreground"
+                              )}
+                            >
+                              {m.subject || "(No subject)"}
+                            </span>
+                            <span className="hidden min-w-0 truncate text-sm text-muted sm:inline">
+                              — {m.snippet || ""}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
+                            <Badge tone="info" soft>
+                              {providerLabel}
+                            </Badge>
+                            <span>{m.isArchived ? "Archived" : "Inbox"}</span>
+                            <span>•</span>
+                            <span>{m.isRead ? "Read" : "Unread"}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "whitespace-nowrap text-xs",
+                          m.isRead ? "text-muted" : "font-semibold text-foreground"
+                        )}
+                      >
+                        {dateText}
                       </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={loading}
-                        onClick={() =>
-                          actOnMessage(m.id, m.isRead ? "markUnread" : "markRead")
-                        }
-                        className="h-8 px-2 text-xs"
-                      >
-                        {m.isRead ? "Mark unread" : "Mark read"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={loading}
-                        onClick={() =>
-                          actOnMessage(m.id, m.isArchived ? "unarchive" : "archive")
-                        }
-                        className="h-8 px-2 text-xs"
-                      >
-                        {m.isArchived ? "Move to inbox" : "Archive"}
-                      </Button>
+
+                      <div className="hidden items-center gap-1 group-hover:flex">
+                        <IconPillButton
+                          label={m.isRead ? "Mark as unread" : "Mark as read"}
+                          disabled={loading}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            actOnMessage(m.id, m.isRead ? "markUnread" : "markRead");
+                          }}
+                        >
+                          {m.isRead ? (
+                            <Mail className="h-4 w-4" />
+                          ) : (
+                            <MailOpen className="h-4 w-4" />
+                          )}
+                        </IconPillButton>
+
+                        <IconPillButton
+                          label={m.isArchived ? "Move to inbox" : "Archive"}
+                          disabled={loading}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            actOnMessage(m.id, m.isArchived ? "unarchive" : "archive");
+                          }}
+                        >
+                          {m.isArchived ? (
+                            <Inbox className="h-4 w-4" />
+                          ) : (
+                            <Archive className="h-4 w-4" />
+                          )}
+                        </IconPillButton>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-xs text-muted">
-                    {m.fromAddress} → {m.toAddress}
-                  </div>
-                  {m.snippet && (
-                    <div className="text-xs text-muted">{m.snippet}</div>
-                  )}
-                  <div className="flex gap-2 text-[11px] text-muted">
-                    <span>{m.isRead ? "Read" : "Unread"}</span>
-                    <span>•</span>
-                    <span>{m.isArchived ? "Archived" : "Inbox"}</span>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         <div className="flex items-center justify-between">
