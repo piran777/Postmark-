@@ -26,6 +26,22 @@ type EmailAccount = {
 };
 
 type SyncInfo = {
+  all?: boolean;
+  totals?: {
+    synced: number;
+    deleted: number;
+    errors: number;
+  };
+  accounts?: Array<{
+    emailAccountId: string;
+    emailAddress: string | null;
+    synced?: number;
+    deleted?: number;
+    usedMode?: string;
+    fallback?: boolean;
+    error?: string;
+    code?: number;
+  }>;
   synced?: number;
   deleted?: number;
   mode?: string;
@@ -135,14 +151,17 @@ export default function InboxPage() {
     }
   }
 
-  async function syncGmail() {
+  async function syncSelectedGmail() {
     setLoading(true);
     setError(null);
     try {
+      if (accountId === "all") {
+        throw new Error("Select an account to sync, or use “Sync all”.");
+      }
       const params = new URLSearchParams();
       params.set("mode", "delta");
       params.set("maxResults", "25");
-      if (accountId !== "all") params.set("emailAccountId", accountId);
+      params.set("emailAccountId", accountId);
 
       const res = await fetch(`/api/sync/gmail?${params.toString()}`, {
         method: "POST",
@@ -153,6 +172,42 @@ export default function InboxPage() {
       }
       const info = (await res.json().catch(() => null)) as SyncInfo | null;
       if (info) setLastSync(info);
+      await loadMessages({ reset: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function syncAllGmail() {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("mode", "delta");
+      params.set("maxResults", "25");
+      params.set("all", "true");
+
+      const res = await fetch(`/api/sync/gmail?${params.toString()}`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Sync failed");
+      }
+      const info = (await res.json().catch(() => null)) as SyncInfo | null;
+      if (info) setLastSync(info);
+      if (info?.all && (info.totals?.errors ?? 0) > 0) {
+        const details = (info.accounts || [])
+          .filter((a) => Boolean(a.error))
+          .slice(0, 3)
+          .map((a) => `${a.emailAddress || a.emailAccountId}: ${a.error}`)
+          .join(" | ");
+        setError(
+          `Sync all finished with ${info.totals?.errors ?? 0} error(s). ${details}`
+        );
+      }
       await loadMessages({ reset: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
@@ -214,6 +269,31 @@ export default function InboxPage() {
     loadAccounts();
   }, []);
 
+  // When a specific account is selected, make provider follow that account (prevents contradictory state).
+  useEffect(() => {
+    if (accountId === "all") return;
+    const acct = accounts.find((a) => a.id === accountId);
+    if (acct && acct.provider && provider !== acct.provider) {
+      setProvider(acct.provider);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, accounts]);
+
+  // If user explicitly changes provider while an account is selected, interpret it as "show all accounts for that provider".
+  useEffect(() => {
+    if (accountId === "all") return;
+    const acct = accounts.find((a) => a.id === accountId);
+    if (acct && provider !== "all" && provider !== acct.provider) {
+      setAccountId("all");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider]);
+
+  const visibleAccounts =
+    provider === "all" ? accounts : accounts.filter((a) => a.provider === provider);
+
+  const selectedAccount = accountId === "all" ? null : accounts.find((a) => a.id === accountId);
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-surface/60 backdrop-blur">
@@ -230,12 +310,25 @@ export default function InboxPage() {
             )}
             {lastSync && (
               <span className="hidden text-xs text-muted sm:inline">
-                • {lastSync.usedMode === "history" ? "Delta" : "Refresh"} • synced{" "}
-                {lastSync.synced ?? 0}
-                {typeof lastSync.deleted === "number" && lastSync.deleted > 0
-                  ? ` • deleted ${lastSync.deleted}`
+                •{" "}
+                {lastSync.all
+                  ? `Synced ${lastSync.accounts?.length ?? 0} account(s)`
+                  : lastSync.usedMode === "history"
+                    ? "Delta"
+                    : "Refresh"}{" "}
+                • synced{" "}
+                {lastSync.all ? lastSync.totals?.synced ?? 0 : lastSync.synced ?? 0}
+                {typeof (lastSync.all ? lastSync.totals?.deleted : lastSync.deleted) ===
+                  "number" &&
+                (lastSync.all ? (lastSync.totals?.deleted ?? 0) : (lastSync.deleted ?? 0)) > 0
+                  ? ` • deleted ${
+                      lastSync.all ? lastSync.totals?.deleted ?? 0 : lastSync.deleted ?? 0
+                    }`
                   : ""}
-                {lastSync.fallback ? " • fallback" : ""}
+                {lastSync.all && (lastSync.totals?.errors ?? 0) > 0
+                  ? ` • errors ${lastSync.totals?.errors ?? 0}`
+                  : ""}
+                {!lastSync.all && lastSync.fallback ? " • fallback" : ""}
               </span>
             )}
           </div>
@@ -254,8 +347,16 @@ export default function InboxPage() {
             <Button variant="secondary" size="sm" onClick={disconnectGmail} disabled={loading}>
               Disconnect Gmail
             </Button>
-            <Button size="sm" onClick={syncGmail} disabled={loading}>
-              Sync Gmail
+            <Button
+              size="sm"
+              onClick={syncSelectedGmail}
+              disabled={loading || accountId === "all"}
+              title={accountId === "all" ? "Select an account to sync" : undefined}
+            >
+              Sync selected
+            </Button>
+            <Button variant="secondary" size="sm" onClick={syncAllGmail} disabled={loading}>
+              Sync all
             </Button>
           </div>
         </div>
@@ -276,7 +377,7 @@ export default function InboxPage() {
               >
                 All
               </FilterPill>
-              {accounts.map((a) => (
+              {visibleAccounts.map((a) => (
                 <FilterPill
                   key={a.id}
                   selected={accountId === a.id}
@@ -385,9 +486,12 @@ export default function InboxPage() {
                       <Badge tone="info" soft>
                         {m.provider}
                       </Badge>
-                      <span className="text-sm font-medium text-foreground">
+                      <Link
+                        href={`/inbox/${m.id}`}
+                        className="text-sm font-medium text-foreground hover:underline"
+                      >
                         {m.subject || "(No subject)"}
-                      </span>
+                      </Link>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted">

@@ -47,7 +47,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Find the user + Gmail account
+  const url = new URL(req.url);
+  const all =
+    url.searchParams.get("all") === "true" ||
+    (url.searchParams.get("sync") || "").toLowerCase() === "all";
+
+  // Find the user + Gmail accounts
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
     include: {
@@ -64,33 +69,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const url = new URL(req.url);
   const requestedAccountId = url.searchParams.get("emailAccountId");
-  const account = requestedAccountId
-    ? user.emailAccounts.find((a) => a.id === requestedAccountId)
-    : user.emailAccounts
-        .slice()
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-        .find((a) => Boolean(a.refreshToken || a.accessToken)) ?? user.emailAccounts[0];
-  if (!account) {
-    return Response.json({ error: "Account not found" }, { status: 404 });
-  }
-  const emailAccountId = account.id;
   const userId = user.id;
-  if (!account.refreshToken && !account.accessToken) {
-    return Response.json(
-      { error: "Missing Google tokens; reconnect account." },
-      { status: 400 }
-    );
-  }
-
-  // Some environments may be running an older generated Prisma Client.
-  // Access these defensively so sync doesn't hard-crash.
-  const lastSyncedAt = (account as any).lastSyncedAt as Date | undefined | null;
-  const gmailHistoryId = (account as any).gmailHistoryId as
-    | string
-    | undefined
-    | null;
 
   try {
     const mode = (url.searchParams.get("mode") || "delta").toLowerCase();
@@ -99,258 +79,368 @@ export async function POST(req: NextRequest) {
       Math.max(1, Number(url.searchParams.get("maxResults") || "25") || 25)
     );
 
-    const oauth2Client = gmailAuth(
-      account.accessToken ?? undefined,
-      account.refreshToken ?? undefined
-    );
+    async function syncOneAccount(account: any) {
+      const emailAccountId = account.id as string;
 
-    const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-
-    // Current mailbox historyId (cursor) - used for true delta sync.
-    const profile = await gmail.users.getProfile({ userId: "me" });
-    const mailboxHistoryId = profile.data.historyId ?? null;
-
-    async function upsertMessageByProviderId(providerMessageId: string) {
-      const full = await gmail.users.messages.get({
-        userId: "me",
-        id: providerMessageId,
-        format: "metadata",
-        metadataHeaders: ["Subject", "From", "To", "Date"],
-      });
-
-      const headers = full.data.payload?.headers || [];
-      const subject =
-        headers.find((h) => h.name?.toLowerCase() === "subject")?.value || "";
-      const from =
-        headers.find((h) => h.name?.toLowerCase() === "from")?.value || "";
-      const to =
-        headers.find((h) => h.name?.toLowerCase() === "to")?.value || "";
-      const dateHeader =
-        headers.find((h) => h.name?.toLowerCase() === "date")?.value || "";
-
-      const { labels, isRead, isArchived } = normalizeLabelState(full.data.labelIds);
-
-      await prisma.message.upsert({
-        where: {
-          emailAccountId_providerMessageId: {
-            emailAccountId,
-            providerMessageId,
-          },
-        },
-        create: {
-          userId,
+      if (!account.refreshToken && !account.accessToken) {
+        return {
           emailAccountId,
-          provider: "google",
-          providerMessageId,
-          threadId: full.data.threadId ?? null,
-          subject,
-          fromAddress: from,
-          toAddress: to,
-          date: dateHeader ? new Date(dateHeader) : null,
-          snippet: full.data.snippet ?? null,
-          labels,
-          isRead,
-          isArchived,
-        },
-        update: {
-          threadId: full.data.threadId ?? null,
-          subject,
-          fromAddress: from,
-          toAddress: to,
-          date: dateHeader ? new Date(dateHeader) : null,
-          snippet: full.data.snippet ?? null,
-          labels,
-          isRead,
-          isArchived,
-          syncedAt: new Date(),
-        },
-      });
-    }
-
-    let usedMode: "history" | "query" = "history";
-    let q: string | null = null;
-    let synced = 0;
-    let deleted = 0;
-    let updatedHistoryId: string | null = mailboxHistoryId;
-    let fallback = false;
-
-    // Full sync (or first time): just fetch the latest inbox messages.
-    // Delta sync (preferred): use Gmail History API to apply changes since last cursor.
-    if (mode !== "delta" || !gmailHistoryId) {
-      usedMode = "query";
-      // For "delta" without a cursor, do a safe initial pull; no after: filter.
-      const listRes = await gmail.users.messages.list({
-        userId: "me",
-        maxResults,
-        labelIds: ["INBOX"],
-      });
-      const messages = listRes.data.messages || [];
-      for (const msg of messages) {
-        if (!msg.id) continue;
-        await upsertMessageByProviderId(msg.id);
-        synced += 1;
+          emailAddress: account.emailAddress ?? null,
+          error: "Missing Google tokens; reconnect account.",
+          code: 400,
+        };
       }
-      updatedHistoryId = mailboxHistoryId;
-    } else {
-      // True delta sync (history cursor)
-      try {
-        const changedIds = new Set<string>();
-        const deletedIds = new Set<string>();
-        let pageToken: string | undefined = undefined;
-        let pages = 0;
 
-        do {
-          pages += 1;
-          const histRes: any = await gmail.users.history.list({
-            userId: "me",
-            startHistoryId: gmailHistoryId,
-            pageToken,
-            maxResults: 500,
-            historyTypes: ["messageAdded", "labelAdded", "labelRemoved", "messageDeleted"],
-          });
+      // Some environments may be running an older generated Prisma Client.
+      // Access these defensively so sync doesn't hard-crash.
+      const lastSyncedAt = (account as any).lastSyncedAt as Date | undefined | null;
+      const gmailHistoryId = (account as any).gmailHistoryId as
+        | string
+        | undefined
+        | null;
 
-          const history = histRes.data.history || [];
-          for (const h of history) {
-            for (const e of h.messagesAdded || []) {
-              const id = e.message?.id;
-              if (id) changedIds.add(id);
-            }
-            for (const e of h.labelsAdded || []) {
-              const id = e.message?.id;
-              if (id) changedIds.add(id);
-            }
-            for (const e of h.labelsRemoved || []) {
-              const id = e.message?.id;
-              if (id) changedIds.add(id);
-            }
-            for (const e of h.messagesDeleted || []) {
-              const id = e.message?.id;
-              if (id) deletedIds.add(id);
-            }
-          }
+      const oauth2Client = gmailAuth(
+        account.accessToken ?? undefined,
+        account.refreshToken ?? undefined
+      );
+      const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
-          if (histRes.data.historyId) {
-            updatedHistoryId = histRes.data.historyId;
-          }
+      // Current mailbox historyId (cursor) - used for true delta sync.
+      const profile = await gmail.users.getProfile({ userId: "me" });
+      const mailboxHistoryId = profile.data.historyId ?? null;
 
-          pageToken = histRes.data.nextPageToken ?? undefined;
-        } while (pageToken && pages < 20);
+      async function upsertMessageByProviderId(providerMessageId: string) {
+        const full = await gmail.users.messages.get({
+          userId: "me",
+          id: providerMessageId,
+          format: "metadata",
+          metadataHeaders: ["Subject", "From", "To", "Date"],
+        });
 
-        // Safety valve: if we hit too many pages, force a full resync next time.
-        if (pageToken) {
-          fallback = true;
-          usedMode = "query";
-          const listRes = await gmail.users.messages.list({
-            userId: "me",
-            maxResults,
-            labelIds: ["INBOX"],
-          });
-          const messages = listRes.data.messages || [];
-          for (const msg of messages) {
-            if (!msg.id) continue;
-            await upsertMessageByProviderId(msg.id);
-            synced += 1;
-          }
-          updatedHistoryId = mailboxHistoryId;
-        } else {
-          if (deletedIds.size > 0) {
-            const ids = Array.from(deletedIds);
-            const res = await prisma.message.deleteMany({
-              where: {
-                userId,
-                provider: "google",
+        const headers = full.data.payload?.headers || [];
+        const subject =
+          headers.find((h) => h.name?.toLowerCase() === "subject")?.value || "";
+        const from =
+          headers.find((h) => h.name?.toLowerCase() === "from")?.value || "";
+        const to = headers.find((h) => h.name?.toLowerCase() === "to")?.value || "";
+        const dateHeader =
+          headers.find((h) => h.name?.toLowerCase() === "date")?.value || "";
+
+        const { labels, isRead, isArchived } = normalizeLabelState(full.data.labelIds);
+
+        await prisma.message.upsert({
+          where: {
+            emailAccountId_providerMessageId: {
               emailAccountId,
-                providerMessageId: { in: ids },
-              },
-            });
-            deleted += res.count;
-          }
+              providerMessageId,
+            },
+          },
+          create: {
+            userId,
+            emailAccountId,
+            provider: "google",
+            providerMessageId,
+            threadId: full.data.threadId ?? null,
+            subject,
+            fromAddress: from,
+            toAddress: to,
+            date: dateHeader ? new Date(dateHeader) : null,
+            snippet: full.data.snippet ?? null,
+            labels,
+            isRead,
+            isArchived,
+          },
+          update: {
+            threadId: full.data.threadId ?? null,
+            subject,
+            fromAddress: from,
+            toAddress: to,
+            date: dateHeader ? new Date(dateHeader) : null,
+            snippet: full.data.snippet ?? null,
+            labels,
+            isRead,
+            isArchived,
+            syncedAt: new Date(),
+          },
+        });
+      }
 
-          // Any deleted message might also show up in changed set; skip it.
-          for (const id of deletedIds) changedIds.delete(id);
+      let usedMode: "history" | "query" = "history";
+      let q: string | null = null;
+      let synced = 0;
+      let deleted = 0;
+      let updatedHistoryId: string | null = mailboxHistoryId;
+      let fallback = false;
 
-          for (const id of changedIds) {
-            await upsertMessageByProviderId(id);
-            synced += 1;
-          }
+      // Full sync (or first time): just fetch the latest inbox messages.
+      // Delta sync (preferred): use Gmail History API to apply changes since last cursor.
+      if (mode !== "delta" || !gmailHistoryId) {
+        usedMode = "query";
+        // For "delta" without a cursor, do a safe initial pull; no after: filter.
+        const listRes = await gmail.users.messages.list({
+          userId: "me",
+          maxResults,
+          labelIds: ["INBOX"],
+        });
+        const messages = listRes.data.messages || [];
+        for (const msg of messages) {
+          if (!msg.id) continue;
+          await upsertMessageByProviderId(msg.id);
+          synced += 1;
         }
-      } catch (err: any) {
-        // Cursor too old: fall back to a full-ish refresh and reset cursor.
-        if (isGmailHistoryTooOld(err)) {
-          fallback = true;
-          usedMode = "query";
-          const listRes = await gmail.users.messages.list({
-            userId: "me",
-            maxResults,
-            labelIds: ["INBOX"],
-          });
-          const messages = listRes.data.messages || [];
-          for (const msg of messages) {
-            if (!msg.id) continue;
-            await upsertMessageByProviderId(msg.id);
-            synced += 1;
+        updatedHistoryId = mailboxHistoryId;
+      } else {
+        // True delta sync (history cursor)
+        try {
+          const changedIds = new Set<string>();
+          const deletedIds = new Set<string>();
+          let pageToken: string | undefined = undefined;
+          let pages = 0;
+
+          do {
+            pages += 1;
+            const histRes: any = await gmail.users.history.list({
+              userId: "me",
+              startHistoryId: gmailHistoryId,
+              pageToken,
+              maxResults: 500,
+              historyTypes: [
+                "messageAdded",
+                "labelAdded",
+                "labelRemoved",
+                "messageDeleted",
+              ],
+            });
+
+            const history = histRes.data.history || [];
+            for (const h of history) {
+              for (const e of h.messagesAdded || []) {
+                const id = e.message?.id;
+                if (id) changedIds.add(id);
+              }
+              for (const e of h.labelsAdded || []) {
+                const id = e.message?.id;
+                if (id) changedIds.add(id);
+              }
+              for (const e of h.labelsRemoved || []) {
+                const id = e.message?.id;
+                if (id) changedIds.add(id);
+              }
+              for (const e of h.messagesDeleted || []) {
+                const id = e.message?.id;
+                if (id) deletedIds.add(id);
+              }
+            }
+
+            if (histRes.data.historyId) {
+              updatedHistoryId = histRes.data.historyId;
+            }
+
+            pageToken = histRes.data.nextPageToken ?? undefined;
+          } while (pageToken && pages < 20);
+
+          // Safety valve: if we hit too many pages, force a full resync next time.
+          if (pageToken) {
+            fallback = true;
+            usedMode = "query";
+            const listRes = await gmail.users.messages.list({
+              userId: "me",
+              maxResults,
+              labelIds: ["INBOX"],
+            });
+            const messages = listRes.data.messages || [];
+            for (const msg of messages) {
+              if (!msg.id) continue;
+              await upsertMessageByProviderId(msg.id);
+              synced += 1;
+            }
+            updatedHistoryId = mailboxHistoryId;
+          } else {
+            if (deletedIds.size > 0) {
+              const ids = Array.from(deletedIds);
+              const res = await prisma.message.deleteMany({
+                where: {
+                  userId,
+                  provider: "google",
+                  emailAccountId,
+                  providerMessageId: { in: ids },
+                },
+              });
+              deleted += res.count;
+            }
+
+            // Any deleted message might also show up in changed set; skip it.
+            for (const id of deletedIds) changedIds.delete(id);
+
+            for (const id of changedIds) {
+              await upsertMessageByProviderId(id);
+              synced += 1;
+            }
           }
-          updatedHistoryId = mailboxHistoryId;
-        } else {
-          throw err;
+        } catch (err: any) {
+          // Cursor too old: fall back to a full-ish refresh and reset cursor.
+          if (isGmailHistoryTooOld(err)) {
+            fallback = true;
+            usedMode = "query";
+            const listRes = await gmail.users.messages.list({
+              userId: "me",
+              maxResults,
+              labelIds: ["INBOX"],
+            });
+            const messages = listRes.data.messages || [];
+            for (const msg of messages) {
+              if (!msg.id) continue;
+              await upsertMessageByProviderId(msg.id);
+              synced += 1;
+            }
+            updatedHistoryId = mailboxHistoryId;
+          } else {
+            throw err;
+          }
         }
       }
-    }
 
-    // Persist delta-sync cursor + clear last error (best effort).
-    try {
-      await prisma.emailAccount.update({
-        where: { id: account.id },
-        data: {
-          lastSyncedAt: new Date(),
-          lastSyncError: null,
-          // This field exists after the new migration; if not, we'll just warn.
-          ...(updatedHistoryId ? { gmailHistoryId: updatedHistoryId } : {}),
+      // Persist delta-sync cursor + clear last error (best effort).
+      try {
+        await prisma.emailAccount.update({
+          where: { id: account.id },
+          data: {
+            lastSyncedAt: new Date(),
+            lastSyncError: null,
+            // This field exists after the new migration; if not, we'll just warn.
+            ...(updatedHistoryId ? { gmailHistoryId: updatedHistoryId } : {}),
+          },
+        });
+      } catch (e) {
+        // If Prisma Client is out of date (unknown args), don't break sync.
+        console.warn("Unable to persist sync state; run prisma generate.", e);
+      }
+
+      return {
+        emailAccountId,
+        emailAddress: account.emailAddress ?? null,
+        synced,
+        deleted,
+        mode,
+        usedMode,
+        fallback,
+        maxResults,
+        since: lastSyncedAt ?? null,
+        query: q ?? null,
+        history: {
+          previous: gmailHistoryId ?? null,
+          mailbox: mailboxHistoryId,
+          stored: updatedHistoryId,
         },
-      });
-    } catch (e) {
-      // If Prisma Client is out of date (unknown args), don't break sync.
-      console.warn("Unable to persist sync state; run prisma generate.", e);
+      };
     }
 
-    return Response.json({
-      synced,
-      deleted,
-      mode,
-      usedMode,
-      fallback,
-      maxResults,
-      since: lastSyncedAt ?? null,
-      query: q ?? null,
-      history: {
-        previous: gmailHistoryId ?? null,
-        mailbox: mailboxHistoryId,
-        stored: updatedHistoryId,
-      },
-    });
+    if (all) {
+      const accounts = user.emailAccounts
+        .slice()
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .filter((a) => Boolean(a.refreshToken || a.accessToken));
+
+      if (accounts.length === 0) {
+        return Response.json(
+          { error: "No Google accounts have valid tokens; reconnect account(s)." },
+          { status: 400 }
+        );
+      }
+
+      const results: any[] = [];
+      for (const a of accounts) {
+        try {
+          results.push(await syncOneAccount(a));
+        } catch (error: any) {
+          const msg = String(error?.message || "");
+          const code = error?.code ?? error?.status ?? error?.response?.status ?? 500;
+          results.push({
+            emailAccountId: a.id,
+            emailAddress: a.emailAddress ?? null,
+            error: msg || "Sync failed",
+            code,
+          });
+        }
+      }
+
+      const totals = results.reduce(
+        (acc, r) => {
+          if (typeof r?.synced === "number") acc.synced += r.synced;
+          if (typeof r?.deleted === "number") acc.deleted += r.deleted;
+          if (r?.error) acc.errors += 1;
+          return acc;
+        },
+        { synced: 0, deleted: 0, errors: 0 }
+      );
+
+      return Response.json({
+        all: true,
+        mode,
+        maxResults,
+        totals,
+        accounts: results,
+      });
+    }
+
+    const account = requestedAccountId
+      ? user.emailAccounts.find((a) => a.id === requestedAccountId)
+      : user.emailAccounts
+          .slice()
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .find((a) => Boolean(a.refreshToken || a.accessToken)) ?? user.emailAccounts[0];
+
+    if (!account) {
+      return Response.json({ error: "Account not found" }, { status: 404 });
+    }
+
+    return Response.json(await syncOneAccount(account));
   } catch (error: any) {
     const msg = String(error?.message || "");
     const code = error?.code ?? error?.status ?? error?.response?.status;
 
+    // If this is a single-account request, try to resolve the account so we can include
+    // useful debug info (refresh token existence / stored scope) in the error payload.
+    let accountForError:
+      | { refreshToken: string | null; scope: string | null }
+      | null = null;
+    if (requestedAccountId) {
+      try {
+        accountForError = await prisma.emailAccount.findFirst({
+          where: { id: requestedAccountId, userId },
+          select: { refreshToken: true, scope: true },
+        });
+      } catch {
+        accountForError = null;
+      }
+    }
+
     // Best-effort error persistence; never crash the request due to logging.
     try {
-      await prisma.emailAccount.update({
-        where: { id: account.id },
-        data: { lastSyncError: msg },
-      });
+      // If account isn't resolvable here (e.g. all=true), best-effort skip.
+      if (requestedAccountId) {
+        await prisma.emailAccount.update({
+          where: { id: requestedAccountId },
+          data: { lastSyncError: msg },
+        });
+      }
     } catch (e) {
       console.warn("Unable to persist sync error; run prisma generate.", e);
     }
 
     // Common case when Google didn't grant Gmail scope
-    if (code === 403 && msg.toLowerCase().includes("insufficient authentication scopes")) {
+    if (
+      code === 403 &&
+      msg.toLowerCase().includes("insufficient authentication scopes")
+    ) {
       return Response.json(
         {
           error:
             "Gmail permission not granted. Reconnect and approve Gmail access. If you recently upgraded scopes (e.g. to gmail.modify), you must revoke the app in your Google Account and sign in again to refresh the granted scopes.",
           detail: msg,
-          hasRefreshToken: Boolean(account.refreshToken),
-          storedAccountScope: account.scope ?? null,
+          hasRefreshToken:
+            accountForError == null ? null : Boolean(accountForError.refreshToken),
+          storedAccountScope: accountForError?.scope ?? null,
         },
         { status: 400 }
       );
@@ -363,8 +453,9 @@ export async function POST(req: NextRequest) {
           error:
             "Google token is invalid (invalid_grant). Disconnect Gmail, revoke the app in your Google Account, then sign in again to get a fresh refresh token. Also confirm GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET match the same Google Cloud project that issued the token.",
           detail: msg,
-          hasRefreshToken: Boolean(account.refreshToken),
-          storedAccountScope: account.scope ?? null,
+          hasRefreshToken:
+            accountForError == null ? null : Boolean(accountForError.refreshToken),
+          storedAccountScope: accountForError?.scope ?? null,
         },
         { status: 400 }
       );
@@ -376,7 +467,7 @@ export async function POST(req: NextRequest) {
         error: "Gmail sync failed",
         detail: msg,
         code,
-        hasRefreshToken: Boolean(account.refreshToken),
+        hasRefreshToken: accountForError == null ? null : Boolean(accountForError.refreshToken),
       },
       { status: 500 }
     );
