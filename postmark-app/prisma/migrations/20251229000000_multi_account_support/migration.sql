@@ -25,3 +25,4 @@ CREATE UNIQUE INDEX "Message_emailAccountId_providerMessageId_key"
 ON "Message"("emailAccountId", "providerMessageId");
 
 
+
