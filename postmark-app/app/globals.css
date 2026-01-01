@@ -4,11 +4,13 @@
   --background: #05070d;
   --foreground: #e5e7eb;
   --muted: #9aa5b5;
-  --primary: #34d399;
-  --primary-strong: #22c08f;
+  /* Primary buttons/links should stay "Gmail-ish" blue even in dark mode */
+  --primary: #0ea5e9;
+  --primary-strong: #0284c7;
   --surface: #0d111a;
   --surface-strong: #151b28;
   --border: rgba(148, 163, 184, 0.2);
+  --border-soft: rgba(148, 163, 184, 0.1);
   --success: #34d399;
   --success-strong: #3ee1a7;
   --info: #60a5fa;
@@ -24,6 +26,7 @@
   --surface: #ffffff;
   --surface-strong: #f1f5f9;
   --border: rgba(148, 163, 184, 0.4);
+  --border-soft: rgba(148, 163, 184, 0.22);
   --success: #22c55e;
   --success-strong: #16a34a;
   --info: #2563eb;
@@ -73,6 +76,14 @@ html.theme-ready body {
 }
 
 .border-border {
+  border-color: var(--border);
+}
+
+.border-border-soft {
+  border-color: var(--border-soft);
+}
+
+.divide-border > :not([hidden]) ~ :not([hidden]) {
   border-color: var(--border);
 }
 

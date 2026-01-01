@@ -91,6 +91,8 @@ export default function InboxPage() {
   const prefetched = useRef<Set<string>>(new Set());
   const prefetchedBodies = useRef<Set<string>>(new Set());
   const searchTimer = useRef<number | null>(null);
+  const filtersRef = useRef<HTMLDivElement | null>(null);
+  const filtersButtonRef = useRef<HTMLButtonElement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("all");
@@ -109,6 +111,7 @@ export default function InboxPage() {
   const [view, setView] = useState<"threads" | "messages">("threads");
   const [searchDraft, setSearchDraft] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   function FilterPill(props: {
     selected: boolean;
@@ -336,6 +339,30 @@ export default function InboxPage() {
     };
   }, [searchDraft]);
 
+  // Close filter popover on outside click / escape.
+  useEffect(() => {
+    if (!showFilters) return;
+
+    function onMouseDown(e: MouseEvent) {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (filtersRef.current?.contains(target)) return;
+      if (filtersButtonRef.current?.contains(target)) return;
+      setShowFilters(false);
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setShowFilters(false);
+    }
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showFilters]);
+
   useEffect(() => {
     loadAccounts();
   }, []);
@@ -435,13 +462,190 @@ export default function InboxPage() {
               />
               <button
                 type="button"
-                title="Search filters (coming soon)"
-                aria-label="Search filters (coming soon)"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-2 text-muted hover:bg-surface-strong"
-                disabled
+                title="Filters"
+                aria-label="Filters"
+                ref={filtersButtonRef}
+                className={cn(
+                  "absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-2 text-muted hover:bg-surface-strong",
+                  showFilters && "bg-surface-strong"
+                )}
+                onClick={() => setShowFilters((v) => !v)}
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </button>
+
+              {/* Gmail-ish filter popover */}
+              {showFilters ? (
+                <div
+                  ref={filtersRef}
+                  className="absolute left-0 right-0 top-full z-20 mt-2 rounded-2xl border border-border bg-surface p-3 shadow-lg"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-foreground">Filters</div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 rounded-full px-3 text-xs font-semibold"
+                        onClick={() => {
+                          setProvider("all");
+                          setReadFilter("all");
+                          setArchiveFilter("inbox");
+                          setView("threads");
+                          setAccountId("all");
+                        }}
+                        disabled={loading}
+                        title="Reset filters"
+                      >
+                        Reset
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="h-8 rounded-full px-3 text-xs font-semibold"
+                        onClick={() => setShowFilters(false)}
+                      >
+                        Done
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-muted">View</div>
+                      <div className="flex flex-wrap gap-2">
+                        <FilterPill
+                          selected={view === "threads"}
+                          onClick={() => setView("threads")}
+                          disabled={loading}
+                        >
+                          Threads
+                        </FilterPill>
+                        <FilterPill
+                          selected={view === "messages"}
+                          onClick={() => setView("messages")}
+                          disabled={loading}
+                        >
+                          Messages
+                        </FilterPill>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-muted">Provider</div>
+                      <div className="flex flex-wrap gap-2">
+                        <FilterPill
+                          selected={provider === "all"}
+                          onClick={() => setProvider("all")}
+                          disabled={loading}
+                        >
+                          All
+                        </FilterPill>
+                        <FilterPill
+                          selected={provider === "google"}
+                          onClick={() => setProvider("google")}
+                          disabled={loading}
+                        >
+                          Gmail
+                        </FilterPill>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-muted">Status</div>
+                      <div className="flex flex-wrap gap-2">
+                        <FilterPill
+                          selected={readFilter === "all"}
+                          onClick={() => setReadFilter("all")}
+                          disabled={loading}
+                        >
+                          All
+                        </FilterPill>
+                        <FilterPill
+                          selected={readFilter === "unread"}
+                          onClick={() => setReadFilter("unread")}
+                          disabled={loading}
+                        >
+                          Unread
+                        </FilterPill>
+                        <FilterPill
+                          selected={readFilter === "read"}
+                          onClick={() => setReadFilter("read")}
+                          disabled={loading}
+                        >
+                          Read
+                        </FilterPill>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-muted">Folder</div>
+                      <div className="flex flex-wrap gap-2">
+                        <FilterPill
+                          selected={archiveFilter === "inbox"}
+                          onClick={() => setArchiveFilter("inbox")}
+                          disabled={loading}
+                        >
+                          Inbox
+                        </FilterPill>
+                        <FilterPill
+                          selected={archiveFilter === "archived"}
+                          onClick={() => setArchiveFilter("archived")}
+                          disabled={loading}
+                        >
+                          Archived
+                        </FilterPill>
+                        <FilterPill
+                          selected={archiveFilter === "all"}
+                          onClick={() => setArchiveFilter("all")}
+                          disabled={loading}
+                        >
+                          All mail
+                        </FilterPill>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 sm:col-span-2">
+                      <div className="text-xs font-semibold text-muted">Account</div>
+                      <div className="flex flex-wrap gap-2">
+                        <FilterPill
+                          selected={accountId === "all"}
+                          onClick={() => setAccountId("all")}
+                          disabled={loading}
+                        >
+                          All
+                        </FilterPill>
+                        {visibleAccounts.map((a) => (
+                          <FilterPill
+                            key={a.id}
+                            selected={accountId === a.id}
+                            onClick={() => setAccountId(a.id)}
+                            disabled={loading}
+                          >
+                            {a.provider === "google" ? "Gmail" : a.provider}: {a.emailAddress}
+                          </FilterPill>
+                        ))}
+                      </div>
+                      {searchDraft.length ? (
+                        <div className="pt-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 rounded-full px-3 text-xs font-semibold"
+                            onClick={() => setSearchDraft("")}
+                            disabled={loading}
+                          >
+                            Clear search
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -686,96 +890,6 @@ export default function InboxPage() {
             </div>
           </div>
 
-          {/* Control chips row (Gmail-ish) */}
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <FilterPill
-              selected={provider === "all"}
-              onClick={() => setProvider("all")}
-              disabled={loading}
-            >
-              Provider: All
-            </FilterPill>
-            <FilterPill
-              selected={provider === "google"}
-              onClick={() => setProvider("google")}
-              disabled={loading}
-            >
-              Provider: Gmail
-            </FilterPill>
-
-            <FilterPill
-              selected={readFilter === "all"}
-              onClick={() => setReadFilter("all")}
-              disabled={loading}
-            >
-              Status: All
-            </FilterPill>
-            <FilterPill
-              selected={readFilter === "unread"}
-              onClick={() => setReadFilter("unread")}
-              disabled={loading}
-            >
-              Unread
-            </FilterPill>
-            <FilterPill
-              selected={readFilter === "read"}
-              onClick={() => setReadFilter("read")}
-              disabled={loading}
-            >
-              Read
-            </FilterPill>
-
-            <FilterPill
-              selected={archiveFilter === "inbox"}
-              onClick={() => setArchiveFilter("inbox")}
-              disabled={loading}
-            >
-              Folder: Inbox
-            </FilterPill>
-            <FilterPill
-              selected={archiveFilter === "archived"}
-              onClick={() => setArchiveFilter("archived")}
-              disabled={loading}
-            >
-              Archived
-            </FilterPill>
-            <FilterPill
-              selected={archiveFilter === "all"}
-              onClick={() => setArchiveFilter("all")}
-              disabled={loading}
-            >
-              All mail
-            </FilterPill>
-
-            <FilterPill
-              selected={view === "threads"}
-              onClick={() => setView("threads")}
-              disabled={loading}
-            >
-              View: Threads
-            </FilterPill>
-            <FilterPill
-              selected={view === "messages"}
-              onClick={() => setView("messages")}
-              disabled={loading}
-            >
-              Messages
-            </FilterPill>
-
-            {searchDraft.length ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 rounded-full px-3 text-xs font-semibold"
-                onClick={() => setSearchDraft("")}
-                disabled={loading}
-              >
-                Clear search
-              </Button>
-            ) : null}
-          </div>
-
           {error && (
             <div className="mb-3 rounded-md border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               {error}
@@ -787,15 +901,15 @@ export default function InboxPage() {
           ) : messages.length === 0 ? (
             <div className="text-sm text-muted">No messages match your filters.</div>
           ) : (
-            <div className="rounded-2xl border border-border bg-surface shadow-sm">
-              <div className="flex items-center justify-between border-b border-border/70 px-5 py-3 sm:px-6">
+            <div className="rounded-2xl border border-border-soft bg-surface shadow-sm">
+              <div className="flex items-center justify-between border-b border-border-soft px-5 py-3 sm:px-6">
                 <div className="text-sm font-semibold text-muted">
                   {messages.length} {view === "threads" ? "threads" : "messages"}
                 </div>
                 <div className="hidden text-xs text-muted sm:block">Click a row to open • Hover for actions</div>
               </div>
 
-              <div className="divide-y divide-border/70">
+              <div>
                 {messages.map((m) => {
                   const from = parseFrom(m.fromAddress);
                   const dateText = m.date ? new Date(m.date).toLocaleString() : "";
@@ -825,7 +939,7 @@ export default function InboxPage() {
                         if (e.key === "Enter" || e.key === " ") router.push(`/inbox/${m.id}`);
                       }}
                       className={cn(
-                        "group flex cursor-pointer items-center gap-3 px-5 py-3 outline-none transition-colors hover:bg-surface-strong sm:px-6",
+                        "group flex cursor-pointer items-center gap-3 border-b border-border-soft px-5 py-3 outline-none transition-colors hover:bg-surface-strong last:border-b-0 sm:px-6",
                         !m.isRead && "bg-background/30"
                       )}
                     >
