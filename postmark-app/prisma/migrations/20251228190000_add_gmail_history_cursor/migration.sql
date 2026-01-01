@@ -3,3 +3,4 @@ ALTER TABLE "EmailAccount" ADD COLUMN "gmailHistoryId" TEXT;
 
 
 
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { Archive, Inbox, Mail, MailOpen } from "lucide-react";
 type Message = {
   id: string;
   provider: string;
+  emailAccountId?: string;
   subject: string | null;
   fromAddress: string | null;
   toAddress: string | null;
@@ -19,6 +20,8 @@ type Message = {
   isRead: boolean;
   isArchived: boolean;
   snippet: string | null;
+  threadId?: string | null;
+  threadCount?: number;
 };
 
 type EmailAccount = {
@@ -72,6 +75,8 @@ function parseFrom(raw: string | null | undefined): { display: string; avatar: s
 
 export default function InboxPage() {
   const router = useRouter();
+  const prefetched = useRef<Set<string>>(new Set());
+  const prefetchedBodies = useRef<Set<string>>(new Set());
   const [messages, setMessages] = useState<Message[]>([]);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("all");
@@ -330,6 +335,35 @@ export default function InboxPage() {
 
   const selectedAccount = accountId === "all" ? null : accounts.find((a) => a.id === accountId);
 
+  async function prefetchBody(messageId: string) {
+    if (prefetchedBodies.current.has(messageId)) return;
+    prefetchedBodies.current.add(messageId);
+    const cacheKey = `pm:messageBody:${messageId}`;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) return;
+    } catch {
+      // ignore
+    }
+    try {
+      const res = await fetch(`/api/messages/${messageId}?includeBody=true`, {
+        method: "GET",
+        headers: { "content-type": "application/json" },
+      });
+      const data = await res.json().catch(() => ({}));
+      const body = data?.item?.body ?? null;
+      if (body && (body.html || body.text)) {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify(body));
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-surface/60 backdrop-blur">
@@ -523,6 +557,7 @@ export default function InboxPage() {
                 const from = parseFrom(m.fromAddress);
                 const dateText = m.date ? new Date(m.date).toLocaleString() : "";
                 const providerLabel = m.provider === "google" ? "Gmail" : m.provider;
+                const threadCount = typeof m.threadCount === "number" ? m.threadCount : 1;
 
                 return (
                   <div
@@ -530,6 +565,19 @@ export default function InboxPage() {
                     role="button"
                     tabIndex={0}
                     onClick={() => router.push(`/inbox/${m.id}`)}
+                    onMouseEnter={() => {
+                      if (prefetched.current.has(m.id)) return;
+                      prefetched.current.add(m.id);
+                      router.prefetch(`/inbox/${m.id}`);
+                      // Warm the message body cache so first-open feels smoother.
+                      prefetchBody(m.id);
+                    }}
+                    onTouchStart={() => {
+                      if (prefetched.current.has(m.id)) return;
+                      prefetched.current.add(m.id);
+                      router.prefetch(`/inbox/${m.id}`);
+                      prefetchBody(m.id);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") router.push(`/inbox/${m.id}`);
                     }}
@@ -565,6 +613,11 @@ export default function InboxPage() {
                             >
                               {m.subject || "(No subject)"}
                             </span>
+                            {threadCount > 1 ? (
+                              <span className="shrink-0 text-xs font-semibold text-muted">
+                                ({threadCount})
+                              </span>
+                            ) : null}
                             <span className="hidden min-w-0 truncate text-sm text-muted sm:inline">
                               — {m.snippet || ""}
                             </span>

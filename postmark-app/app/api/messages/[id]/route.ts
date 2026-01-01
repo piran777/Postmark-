@@ -6,8 +6,59 @@ import { google } from "googleapis";
 
 type Action = "markRead" | "markUnread" | "archive" | "unarchive";
 
+function decodeBase64Url(data: string): string {
+  const normalized = data.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
+function stripScripts(html: string) {
+  // Defense-in-depth: UI renders in sandboxed iframe (no scripts allowed),
+  // but remove scripts anyway.
+  return html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+}
+
+function findMimeParts(payload: any, out: Array<{ mimeType: string; data: string }>) {
+  if (!payload) return;
+  const mimeType = payload.mimeType as string | undefined;
+  const data = payload.body?.data as string | undefined;
+  if (mimeType && data) out.push({ mimeType, data });
+  const parts = payload.parts as any[] | undefined;
+  if (Array.isArray(parts)) {
+    for (const p of parts) findMimeParts(p, out);
+  }
+}
+
+async function fetchGmailBody(opts: {
+  providerMessageId: string;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+}): Promise<{ html: string | null; text: string | null }> {
+  if (!opts.providerMessageId) return { html: null, text: null };
+  if (!opts.accessToken && !opts.refreshToken) return { html: null, text: null };
+
+  const oauth2Client = gmailAuth(opts.accessToken ?? undefined, opts.refreshToken ?? undefined);
+  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+  const res = await gmail.users.messages.get({
+    userId: "me",
+    id: opts.providerMessageId,
+    format: "full",
+  });
+
+  const payload = res.data.payload;
+  const found: Array<{ mimeType: string; data: string }> = [];
+  findMimeParts(payload, found);
+
+  const htmlPart = found.find((p) => p.mimeType === "text/html");
+  const textPart = found.find((p) => p.mimeType === "text/plain");
+
+  const html = htmlPart?.data ? stripScripts(decodeBase64Url(htmlPart.data)) : null;
+  const text = textPart?.data ? decodeBase64Url(textPart.data) : null;
+  return { html, text };
+}
+
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions);
@@ -24,14 +75,42 @@ export async function GET(
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const url = new URL(req.url);
+  const includeBody =
+    url.searchParams.get("includeBody") === "true" ||
+    url.searchParams.get("body") === "true";
+
   const msg = await prisma.message.findFirst({
     where: { id, userId: user.id },
     include: {
-      emailAccount: { select: { id: true, provider: true, emailAddress: true } },
+      emailAccount: {
+        select: {
+          id: true,
+          provider: true,
+          emailAddress: true,
+        },
+      },
     },
   });
   if (!msg) {
     return Response.json({ error: "Message not found" }, { status: 404 });
+  }
+
+  let body: { html: string | null; text: string | null } | null = null;
+  if (includeBody && msg.provider === "google") {
+    try {
+      const tokens = await prisma.emailAccount.findFirst({
+        where: { id: msg.emailAccountId, userId: user.id },
+        select: { accessToken: true, refreshToken: true },
+      });
+      body = await fetchGmailBody({
+        providerMessageId: msg.providerMessageId,
+        accessToken: tokens?.accessToken ?? null,
+        refreshToken: tokens?.refreshToken ?? null,
+      });
+    } catch {
+      body = { html: null, text: null };
+    }
   }
 
   return Response.json({
@@ -49,6 +128,7 @@ export async function GET(
       providerMessageId: msg.providerMessageId,
       threadId: msg.threadId,
       emailAccount: msg.emailAccount,
+      body,
     },
   });
 }

@@ -21,3 +21,4 @@ ALTER TABLE "UserPreference" ADD CONSTRAINT "UserPreference_userId_fkey" FOREIGN
 
 
 
+

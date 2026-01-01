@@ -73,10 +73,31 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
+  const threadIds = Array.from(
+    new Set(
+      items
+        .map((m) => m.threadId)
+        .filter((t): t is string => typeof t === "string" && t.length > 0)
+    )
+  );
+  const threadCounts =
+    threadIds.length === 0
+      ? new Map<string, number>()
+      : new Map(
+          (
+            await prisma.message.groupBy({
+              by: ["emailAccountId", "threadId"],
+              where: { userId: user.id, threadId: { in: threadIds } },
+              _count: { _all: true },
+            })
+          ).map((g) => [`${g.emailAccountId}:${g.threadId}`, g._count._all])
+        );
+
   return Response.json({
     items: items.map((m) => ({
       id: m.id,
       provider: m.provider,
+      emailAccountId: m.emailAccountId,
       subject: m.subject,
       fromAddress: m.fromAddress,
       toAddress: m.toAddress,
@@ -84,6 +105,11 @@ export async function GET(req: NextRequest) {
       isRead: m.isRead,
       isArchived: m.isArchived,
       snippet: m.snippet,
+      threadId: m.threadId,
+      threadCount:
+        m.threadId && typeof m.threadId === "string"
+          ? threadCounts.get(`${m.emailAccountId}:${m.threadId}`) ?? 1
+          : 1,
     })),
     total,
     page,
