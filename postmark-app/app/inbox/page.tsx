@@ -15,8 +15,6 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
-  Sparkles,
-  Users,
   Send,
   Star,
   Trash2,
@@ -109,7 +107,6 @@ export default function InboxPage() {
     "inbox"
   );
   const [view, setView] = useState<"threads" | "messages">("threads");
-  const [tab, setTab] = useState<"primary" | "promotions" | "social">("primary");
   const [searchDraft, setSearchDraft] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -548,24 +545,22 @@ export default function InboxPage() {
               </button>
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-muted opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                disabled
-                title="Coming soon"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-foreground hover:bg-surface-strong"
+                onClick={() => setArchiveFilter("archived")}
               >
                 <span className="inline-flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Social
+                  <Archive className="h-4 w-4 text-muted" />
+                  Archived
                 </span>
               </button>
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-muted opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                disabled
-                title="Coming soon"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-foreground hover:bg-surface-strong"
+                onClick={() => setArchiveFilter("all")}
               >
                 <span className="inline-flex items-center gap-2">
-                  <Sparkles className="h-4 w-4" />
-                  Promotions
+                  <Mail className="h-4 w-4 text-muted" />
+                  All mail
                 </span>
               </button>
               <button
@@ -618,42 +613,68 @@ export default function InboxPage() {
         </aside>
 
         <main className="min-w-0 flex-1">
-          {/* Tabs row */}
+          {/* Tabs row (Postmark-style, replaces Gmail Primary/Promotions/Social) */}
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setTab("primary")}
+                onClick={() => {
+                  setArchiveFilter("inbox");
+                  setReadFilter("all");
+                }}
                 className={cn(
                   "rounded-full px-3 py-2 text-sm font-semibold",
-                  tab === "primary" ? "bg-surface-strong text-foreground" : "text-muted hover:bg-surface"
+                  archiveFilter === "inbox" && readFilter === "all"
+                    ? "bg-surface-strong text-foreground"
+                    : "text-muted hover:bg-surface"
                 )}
               >
-                Primary
+                Inbox
               </button>
               <button
                 type="button"
-                onClick={() => setTab("promotions")}
-                disabled
-                title="Coming soon"
+                onClick={() => {
+                  setArchiveFilter("inbox");
+                  setReadFilter("unread");
+                }}
                 className={cn(
-                  "rounded-full px-3 py-2 text-sm font-semibold opacity-60",
-                  tab === "promotions" ? "bg-surface-strong" : "text-muted"
+                  "rounded-full px-3 py-2 text-sm font-semibold",
+                  archiveFilter === "inbox" && readFilter === "unread"
+                    ? "bg-surface-strong text-foreground"
+                    : "text-muted hover:bg-surface"
                 )}
               >
-                Promotions
+                Unread
               </button>
               <button
                 type="button"
-                onClick={() => setTab("social")}
-                disabled
-                title="Coming soon"
+                onClick={() => {
+                  setArchiveFilter("archived");
+                  setReadFilter("all");
+                }}
                 className={cn(
-                  "rounded-full px-3 py-2 text-sm font-semibold opacity-60",
-                  tab === "social" ? "bg-surface-strong" : "text-muted"
+                  "rounded-full px-3 py-2 text-sm font-semibold",
+                  archiveFilter === "archived" && readFilter === "all"
+                    ? "bg-surface-strong text-foreground"
+                    : "text-muted hover:bg-surface"
                 )}
               >
-                Social
+                Archived
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setArchiveFilter("all");
+                  setReadFilter("all");
+                }}
+                className={cn(
+                  "rounded-full px-3 py-2 text-sm font-semibold",
+                  archiveFilter === "all" && readFilter === "all"
+                    ? "bg-surface-strong text-foreground"
+                    : "text-muted hover:bg-surface"
+                )}
+              >
+                All mail
               </button>
             </div>
 
