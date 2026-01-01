@@ -79,6 +79,9 @@ export async function GET(
   const includeBody =
     url.searchParams.get("includeBody") === "true" ||
     url.searchParams.get("body") === "true";
+  const includeConversation =
+    url.searchParams.get("includeConversation") === "true" ||
+    url.searchParams.get("conversation") === "true";
 
   const msg = await prisma.message.findFirst({
     where: { id, userId: user.id },
@@ -97,6 +100,21 @@ export async function GET(
   }
 
   let body: { html: string | null; text: string | null } | null = null;
+  let conversation:
+    | null
+    | {
+        threadId: string;
+        items: Array<{
+          id: string;
+          subject: string | null;
+          fromAddress: string | null;
+          toAddress: string | null;
+          date: string | null;
+          snippet: string | null;
+          isRead: boolean;
+          isArchived: boolean;
+        }>;
+      } = null;
 
   if (includeBody && msg.provider === "google") {
     try {
@@ -112,6 +130,45 @@ export async function GET(
     } catch {
       body = { html: null, text: null };
     }
+  }
+
+  if (includeConversation && msg.threadId) {
+    const items = await prisma.message.findMany({
+      where: {
+        userId: user.id,
+        emailAccountId: msg.emailAccountId,
+        threadId: msg.threadId,
+      },
+      orderBy: [
+        { date: { sort: "asc", nulls: "last" } },
+        { createdAt: "asc" },
+        { id: "asc" },
+      ],
+      select: {
+        id: true,
+        subject: true,
+        fromAddress: true,
+        toAddress: true,
+        date: true,
+        snippet: true,
+        isRead: true,
+        isArchived: true,
+      },
+    });
+
+    conversation = {
+      threadId: msg.threadId,
+      items: items.map((m) => ({
+        id: m.id,
+        subject: m.subject,
+        fromAddress: m.fromAddress,
+        toAddress: m.toAddress,
+        date: m.date ? m.date.toISOString() : null,
+        snippet: m.snippet,
+        isRead: m.isRead,
+        isArchived: m.isArchived,
+      })),
+    };
   }
 
   return Response.json({
@@ -130,6 +187,7 @@ export async function GET(
       threadId: msg.threadId,
       emailAccount: msg.emailAccount,
       body,
+      conversation,
     },
   });
 }

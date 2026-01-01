@@ -22,6 +22,7 @@ type Message = {
   snippet: string | null;
   threadId?: string | null;
   threadCount?: number;
+  unreadCount?: number;
 };
 
 type EmailAccount = {
@@ -92,6 +93,7 @@ export default function InboxPage() {
   const [archiveFilter, setArchiveFilter] = useState<"inbox" | "archived" | "all">(
     "inbox"
   );
+  const [view, setView] = useState<"threads" | "messages">("threads");
 
   function FilterPill(props: {
     selected: boolean;
@@ -175,7 +177,8 @@ export default function InboxPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/messages?${buildQuery(nextPage)}`);
+      const endpoint = view === "threads" ? "/api/threads" : "/api/messages";
+      const res = await fetch(`${endpoint}?${buildQuery(nextPage)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error || "Failed to load messages");
@@ -304,7 +307,7 @@ export default function InboxPage() {
     setMessages([]);
     loadMessages({ reset: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, readFilter, archiveFilter, accountId]);
+  }, [provider, readFilter, archiveFilter, accountId, view]);
 
   useEffect(() => {
     loadAccounts();
@@ -526,6 +529,24 @@ export default function InboxPage() {
                 All
               </FilterPill>
             </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">View</span>
+              <FilterPill
+                selected={view === "threads"}
+                onClick={() => setView("threads")}
+                disabled={loading}
+              >
+                Threads
+              </FilterPill>
+              <FilterPill
+                selected={view === "messages"}
+                onClick={() => setView("messages")}
+                disabled={loading}
+              >
+                Messages
+              </FilterPill>
+            </div>
           </CardContent>
         </Card>
 
@@ -545,7 +566,7 @@ export default function InboxPage() {
           <div className="rounded-2xl border border-border bg-surface shadow-sm">
             <div className="flex items-center justify-between border-b border-border/70 px-5 py-3 sm:px-6">
               <div className="text-sm font-semibold text-muted">
-                {messages.length} messages
+                {messages.length} {view === "threads" ? "threads" : "messages"}
               </div>
               <div className="hidden text-xs text-muted sm:block">
                 Click a row to open • Hover for actions
@@ -558,6 +579,7 @@ export default function InboxPage() {
                 const dateText = m.date ? new Date(m.date).toLocaleString() : "";
                 const providerLabel = m.provider === "google" ? "Gmail" : m.provider;
                 const threadCount = typeof m.threadCount === "number" ? m.threadCount : 1;
+                const unreadCount = typeof m.unreadCount === "number" ? m.unreadCount : 0;
 
                 return (
                   <div
@@ -616,6 +638,11 @@ export default function InboxPage() {
                             {threadCount > 1 ? (
                               <span className="shrink-0 text-xs font-semibold text-muted">
                                 ({threadCount})
+                              </span>
+                            ) : null}
+                            {view === "threads" && unreadCount > 0 ? (
+                              <span className="shrink-0 text-xs font-semibold text-muted">
+                                • {unreadCount} unread
                               </span>
                             ) : null}
                             <span className="hidden min-w-0 truncate text-sm text-muted sm:inline">
