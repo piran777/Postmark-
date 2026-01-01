@@ -81,6 +81,7 @@ export default async function MessageDetailPage(props: { params: Promise<{ id: s
           ],
           select: {
             id: true,
+            providerMessageId: true,
             subject: true,
             fromAddress: true,
             toAddress: true,

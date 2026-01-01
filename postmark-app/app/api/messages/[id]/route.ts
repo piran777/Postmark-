@@ -97,6 +97,7 @@ export async function GET(
   }
 
   let body: { html: string | null; text: string | null } | null = null;
+
   if (includeBody && msg.provider === "google") {
     try {
       const tokens = await prisma.emailAccount.findFirst({
