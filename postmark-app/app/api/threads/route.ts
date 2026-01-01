@@ -62,6 +62,8 @@ export async function GET(req: NextRequest) {
   const emailAccountId = url.searchParams.get("emailAccountId");
   const isArchived = parseBool(url.searchParams.get("isArchived"));
   const isRead = parseBool(url.searchParams.get("isRead")); // thread-level: any unread => unread
+  const qRaw = url.searchParams.get("q");
+  const q = typeof qRaw === "string" ? qRaw.trim() : "";
 
   // Base where does NOT include isRead; we compute unreadCount per thread.
   const where: Prisma.MessageWhereInput = {
@@ -69,6 +71,16 @@ export async function GET(req: NextRequest) {
     ...(typeof emailAccountId === "string" && emailAccountId.length ? { emailAccountId } : {}),
     ...(providers.length ? { provider: { in: providers } } : {}),
     ...(typeof isArchived === "boolean" ? { isArchived } : {}),
+    ...(q.length
+      ? {
+          OR: [
+            { subject: { contains: q, mode: "insensitive" } },
+            { fromAddress: { contains: q, mode: "insensitive" } },
+            { toAddress: { contains: q, mode: "insensitive" } },
+            { snippet: { contains: q, mode: "insensitive" } },
+          ],
+        }
+      : {}),
   };
 
   // We keep this bounded so it stays fast.

@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
   const emailAccountId = url.searchParams.get("emailAccountId");
   const isRead = parseBool(url.searchParams.get("isRead"));
   const isArchived = parseBool(url.searchParams.get("isArchived"));
+  const qRaw = url.searchParams.get("q");
+  const q = typeof qRaw === "string" ? qRaw.trim() : "";
 
   const where: Prisma.MessageWhereInput = {
     userId: user.id,
@@ -57,6 +59,16 @@ export async function GET(req: NextRequest) {
     ...(providers.length ? { provider: { in: providers } } : {}),
     ...(typeof isRead === "boolean" ? { isRead } : {}),
     ...(typeof isArchived === "boolean" ? { isArchived } : {}),
+    ...(q.length
+      ? {
+          OR: [
+            { subject: { contains: q, mode: "insensitive" } },
+            { fromAddress: { contains: q, mode: "insensitive" } },
+            { toAddress: { contains: q, mode: "insensitive" } },
+            { snippet: { contains: q, mode: "insensitive" } },
+          ],
+        }
+      : {}),
   };
 
   const [total, items] = await Promise.all([

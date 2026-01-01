@@ -4,10 +4,24 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { Archive, Inbox, Mail, MailOpen } from "lucide-react";
+import {
+  Archive,
+  Inbox,
+  Mail,
+  MailOpen,
+  RefreshCcw,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Sparkles,
+  Users,
+  Send,
+  Star,
+  Trash2,
+  PenSquare,
+} from "lucide-react";
 
 type Message = {
   id: string;
@@ -78,6 +92,7 @@ export default function InboxPage() {
   const router = useRouter();
   const prefetched = useRef<Set<string>>(new Set());
   const prefetchedBodies = useRef<Set<string>>(new Set());
+  const searchTimer = useRef<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("all");
@@ -94,6 +109,9 @@ export default function InboxPage() {
     "inbox"
   );
   const [view, setView] = useState<"threads" | "messages">("threads");
+  const [tab, setTab] = useState<"primary" | "promotions" | "social">("primary");
+  const [searchDraft, setSearchDraft] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   function FilterPill(props: {
     selected: boolean;
@@ -152,6 +170,7 @@ export default function InboxPage() {
     if (readFilter === "unread") params.set("isRead", "false");
     if (archiveFilter === "inbox") params.set("isArchived", "false");
     if (archiveFilter === "archived") params.set("isArchived", "true");
+    if (searchQuery.trim().length) params.set("q", searchQuery.trim());
     return params.toString();
   }
 
@@ -307,7 +326,18 @@ export default function InboxPage() {
     setMessages([]);
     loadMessages({ reset: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, readFilter, archiveFilter, accountId, view]);
+  }, [provider, readFilter, archiveFilter, accountId, view, searchQuery]);
+
+  // Debounce search input like Gmail.
+  useEffect(() => {
+    if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    searchTimer.current = window.setTimeout(() => {
+      setSearchQuery(searchDraft);
+    }, 250);
+    return () => {
+      if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    };
+  }, [searchDraft]);
 
   useEffect(() => {
     loadAccounts();
@@ -367,376 +397,546 @@ export default function InboxPage() {
     }
   }
 
+  const providerLabelForHeader =
+    selectedAccount?.provider === "google"
+      ? "Gmail"
+      : selectedAccount?.provider
+        ? selectedAccount.provider
+        : provider === "google"
+          ? "Gmail"
+          : provider === "all"
+            ? "All"
+            : provider;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-surface/60 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-semibold tracking-tight">Inbox</span>
-            <Badge tone="success" soft>
-              prototype
-            </Badge>
-            {lastSync?.since && (
-              <span className="hidden text-xs text-muted sm:inline">
-                Last sync: {new Date(lastSync.since).toLocaleString()}
-              </span>
-            )}
-            {lastSync && (
-              <span className="hidden text-xs text-muted sm:inline">
-                •{" "}
-                {lastSync.all
-                  ? `Synced ${lastSync.accounts?.length ?? 0} account(s)`
-                  : lastSync.usedMode === "history"
-                    ? "Delta"
-                    : "Refresh"}{" "}
-                • synced{" "}
-                {lastSync.all ? lastSync.totals?.synced ?? 0 : lastSync.synced ?? 0}
-                {typeof (lastSync.all ? lastSync.totals?.deleted : lastSync.deleted) ===
-                  "number" &&
-                (lastSync.all ? (lastSync.totals?.deleted ?? 0) : (lastSync.deleted ?? 0)) > 0
-                  ? ` • deleted ${
-                      lastSync.all ? lastSync.totals?.deleted ?? 0 : lastSync.deleted ?? 0
-                    }`
-                  : ""}
-                {lastSync.all && (lastSync.totals?.errors ?? 0) > 0
-                  ? ` • errors ${lastSync.totals?.errors ?? 0}`
-                  : ""}
-                {!lastSync.all && lastSync.fallback ? " • fallback" : ""}
-              </span>
-            )}
+      {/* Gmail-ish top bar */}
+      <header className="sticky top-0 z-10 border-b border-border bg-surface/70 backdrop-blur">
+        <div className="mx-auto flex max-w-[1400px] items-center gap-3 px-3 py-2 sm:px-4">
+          {/* Left gutter matches sidebar width on desktop so search aligns with tabs/content */}
+          <div className="flex items-center gap-2 lg:w-[256px] lg:shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-strong">
+              <span className="text-sm font-black tracking-tight">P</span>
+            </div>
+            <div className="hidden sm:block">
+              <div className="text-sm font-semibold">Postmark</div>
+              <div className="text-[11px] text-muted">{providerLabelForHeader}</div>
+            </div>
           </div>
-          <div className="flex gap-2">
+
+          <div className="flex min-w-0 flex-1 items-center">
+            <div className="relative w-full max-w-[720px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <input
+                value={searchDraft}
+                onChange={(e) => setSearchDraft(e.target.value)}
+                placeholder="Search mail"
+                className={cn(
+                  "h-10 w-full rounded-full border border-border bg-surface px-10 text-sm outline-none",
+                  "focus:border-border-strong focus:bg-background"
+                )}
+              />
+              <button
+                type="button"
+                title="Search filters (coming soon)"
+                aria-label="Search filters (coming soon)"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-2 text-muted hover:bg-surface-strong"
+                disabled
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1">
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
+              className="h-9 w-9 rounded-full p-0"
+              title="Refresh"
               onClick={() => loadMessages({ reset: true })}
               disabled={loading}
             >
-              Refresh
+              <RefreshCcw className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex">
-              <Link href="/api/auth/signout?callbackUrl=/auth/signin">Sign out</Link>
-            </Button>
-            <Button variant="secondary" size="sm" onClick={disconnectGmail} disabled={loading}>
-              Disconnect Gmail
-            </Button>
+
             <Button
+              variant="secondary"
               size="sm"
               onClick={syncSelectedGmail}
               disabled={loading || accountId === "all"}
-              title={accountId === "all" ? "Select an account to sync" : undefined}
+              title={accountId === "all" ? "Select an account to sync" : "Sync selected"}
+              className="hidden sm:inline-flex"
             >
-              Sync selected
+              Sync
             </Button>
-            <Button variant="secondary" size="sm" onClick={syncAllGmail} disabled={loading}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={syncAllGmail}
+              disabled={loading}
+              className="hidden sm:inline-flex"
+            >
               Sync all
+            </Button>
+
+            <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex">
+              <Link href="/api/auth/signout?callbackUrl=/auth/signin">Sign out</Link>
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 rounded-full p-0"
+              title="Settings (coming soon)"
+              disabled
+            >
+              <Settings className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6">
-        <Card className="border-border bg-surface">
-          <CardHeader className="border-border/60">
-            <CardTitle className="text-sm font-semibold text-muted">Filters</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted">Account</span>
-              <FilterPill
-                selected={accountId === "all"}
-                onClick={() => setAccountId("all")}
-                disabled={loading}
+      <div className="mx-auto flex max-w-[1400px] gap-4 px-3 py-4 sm:px-4">
+        {/* Gmail-ish left sidebar */}
+        <aside className="hidden w-[256px] shrink-0 lg:block">
+          <div className="sticky top-[64px] space-y-3">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full justify-start gap-2 rounded-2xl"
+              disabled
+              title="Compose (coming soon)"
+            >
+              <PenSquare className="h-4 w-4" />
+              Compose
+            </Button>
+
+            <div className="space-y-1">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-foreground hover:bg-surface-strong"
+                onClick={() => setArchiveFilter("inbox")}
               >
-                All
-              </FilterPill>
-              {visibleAccounts.map((a) => (
+                <span className="inline-flex items-center gap-2">
+                  <Inbox className="h-4 w-4 text-muted" />
+                  Inbox
+                </span>
+                <span className="text-xs text-muted">{messages.length}</span>
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-muted opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                disabled
+                title="Coming soon"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Star className="h-4 w-4" />
+                  Starred
+                </span>
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-muted opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                disabled
+                title="Coming soon"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Send className="h-4 w-4" />
+                  Sent
+                </span>
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-muted opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                disabled
+                title="Coming soon"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Social
+                </span>
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-muted opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                disabled
+                title="Coming soon"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  Promotions
+                </span>
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-muted opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                disabled
+                title="Coming soon"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Trash2 className="h-4 w-4" />
+                  Trash
+                </span>
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-surface p-3">
+              <div className="mb-2 text-xs font-semibold text-muted">Accounts</div>
+              <div className="flex flex-wrap gap-2">
                 <FilterPill
-                  key={a.id}
-                  selected={accountId === a.id}
-                  onClick={() => setAccountId(a.id)}
+                  selected={accountId === "all"}
+                  onClick={() => setAccountId("all")}
                   disabled={loading}
                 >
-                  {a.provider === "google" ? "Gmail" : a.provider}: {a.emailAddress}
+                  All
                 </FilterPill>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted">Provider</span>
-              <FilterPill
-                selected={provider === "all"}
-                onClick={() => setProvider("all")}
-                disabled={loading}
-              >
-                All
-              </FilterPill>
-              <FilterPill
-                selected={provider === "google"}
-                onClick={() => setProvider("google")}
-                disabled={loading}
-              >
-                Gmail
-              </FilterPill>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted">Status</span>
-              <FilterPill
-                selected={readFilter === "all"}
-                onClick={() => setReadFilter("all")}
-                disabled={loading}
-              >
-                All
-              </FilterPill>
-              <FilterPill
-                selected={readFilter === "unread"}
-                onClick={() => setReadFilter("unread")}
-                disabled={loading}
-              >
-                Unread
-              </FilterPill>
-              <FilterPill
-                selected={readFilter === "read"}
-                onClick={() => setReadFilter("read")}
-                disabled={loading}
-              >
-                Read
-              </FilterPill>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted">Folder</span>
-              <FilterPill
-                selected={archiveFilter === "inbox"}
-                onClick={() => setArchiveFilter("inbox")}
-                disabled={loading}
-              >
-                Inbox
-              </FilterPill>
-              <FilterPill
-                selected={archiveFilter === "archived"}
-                onClick={() => setArchiveFilter("archived")}
-                disabled={loading}
-              >
-                Archived
-              </FilterPill>
-              <FilterPill
-                selected={archiveFilter === "all"}
-                onClick={() => setArchiveFilter("all")}
-                disabled={loading}
-              >
-                All
-              </FilterPill>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted">View</span>
-              <FilterPill
-                selected={view === "threads"}
-                onClick={() => setView("threads")}
-                disabled={loading}
-              >
-                Threads
-              </FilterPill>
-              <FilterPill
-                selected={view === "messages"}
-                onClick={() => setView("messages")}
-                disabled={loading}
-              >
-                Messages
-              </FilterPill>
-            </div>
-          </CardContent>
-        </Card>
-
-        {error && (
-          <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-            {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="text-sm text-muted">Loading...</div>
-        ) : messages.length === 0 ? (
-          <div className="text-sm text-muted">
-            No messages yet. Connect Gmail and run sync.
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-border bg-surface shadow-sm">
-            <div className="flex items-center justify-between border-b border-border/70 px-5 py-3 sm:px-6">
-              <div className="text-sm font-semibold text-muted">
-                {messages.length} {view === "threads" ? "threads" : "messages"}
-              </div>
-              <div className="hidden text-xs text-muted sm:block">
-                Click a row to open • Hover for actions
-              </div>
-            </div>
-
-            <div className="divide-y divide-border/70">
-              {messages.map((m) => {
-                const from = parseFrom(m.fromAddress);
-                const dateText = m.date ? new Date(m.date).toLocaleString() : "";
-                const providerLabel = m.provider === "google" ? "Gmail" : m.provider;
-                const threadCount = typeof m.threadCount === "number" ? m.threadCount : 1;
-                const unreadCount = typeof m.unreadCount === "number" ? m.unreadCount : 0;
-
-                return (
-                  <div
-                    key={m.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => router.push(`/inbox/${m.id}`)}
-                    onMouseEnter={() => {
-                      if (prefetched.current.has(m.id)) return;
-                      prefetched.current.add(m.id);
-                      router.prefetch(`/inbox/${m.id}`);
-                      // Warm the message body cache so first-open feels smoother.
-                      prefetchBody(m.id);
-                    }}
-                    onTouchStart={() => {
-                      if (prefetched.current.has(m.id)) return;
-                      prefetched.current.add(m.id);
-                      router.prefetch(`/inbox/${m.id}`);
-                      prefetchBody(m.id);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") router.push(`/inbox/${m.id}`);
-                    }}
-                    className={cn(
-                      "group flex cursor-pointer items-center gap-3 px-5 py-3 outline-none transition-colors hover:bg-surface-strong sm:px-6",
-                      !m.isRead && "bg-background/30"
-                    )}
+                {visibleAccounts.map((a) => (
+                  <FilterPill
+                    key={a.id}
+                    selected={accountId === a.id}
+                    onClick={() => setAccountId(a.id)}
+                    disabled={loading}
                   >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-sm font-semibold text-foreground">
-                      {from.avatar}
-                    </div>
+                    {a.provider === "google" ? "Gmail" : a.provider}: {a.emailAddress}
+                  </FilterPill>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={disconnectGmail}
+                  disabled={loading}
+                  className="w-full"
+                >
+                  Disconnect Gmail
+                </Button>
+              </div>
+            </div>
+          </div>
+        </aside>
 
-                    <div className="min-w-0 flex-1">
-                      {/* Gmail-ish column layout: sender | subject+preview */}
-                      <div className="grid min-w-0 grid-cols-1 items-baseline gap-2 sm:grid-cols-[220px_1fr] lg:grid-cols-[260px_1fr]">
-                        <span
-                          className={cn(
-                            "truncate text-sm",
-                            m.isRead ? "text-foreground/80" : "font-semibold text-foreground"
-                          )}
-                        >
-                          {from.display}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 items-baseline gap-2">
-                            <span
-                              className={cn(
-                                "truncate text-sm",
-                                m.isRead
-                                  ? "text-foreground/80"
-                                  : "font-semibold text-foreground"
-                              )}
-                            >
-                              {m.subject || "(No subject)"}
-                            </span>
-                            {threadCount > 1 ? (
-                              <span className="shrink-0 text-xs font-semibold text-muted">
-                                ({threadCount})
+        <main className="min-w-0 flex-1">
+          {/* Tabs row */}
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTab("primary")}
+                className={cn(
+                  "rounded-full px-3 py-2 text-sm font-semibold",
+                  tab === "primary" ? "bg-surface-strong text-foreground" : "text-muted hover:bg-surface"
+                )}
+              >
+                Primary
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("promotions")}
+                disabled
+                title="Coming soon"
+                className={cn(
+                  "rounded-full px-3 py-2 text-sm font-semibold opacity-60",
+                  tab === "promotions" ? "bg-surface-strong" : "text-muted"
+                )}
+              >
+                Promotions
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("social")}
+                disabled
+                title="Coming soon"
+                className={cn(
+                  "rounded-full px-3 py-2 text-sm font-semibold opacity-60",
+                  tab === "social" ? "bg-surface-strong" : "text-muted"
+                )}
+              >
+                Social
+              </button>
+            </div>
+
+            <div className="hidden items-center gap-2 text-xs text-muted sm:flex">
+              {lastSync?.since ? (
+                <span>Last sync: {new Date(lastSync.since).toLocaleString()}</span>
+              ) : null}
+              {searchQuery.trim().length ? <span>• search: “{searchQuery.trim()}”</span> : null}
+            </div>
+          </div>
+
+          {/* Control chips row (Gmail-ish) */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <FilterPill
+              selected={provider === "all"}
+              onClick={() => setProvider("all")}
+              disabled={loading}
+            >
+              Provider: All
+            </FilterPill>
+            <FilterPill
+              selected={provider === "google"}
+              onClick={() => setProvider("google")}
+              disabled={loading}
+            >
+              Provider: Gmail
+            </FilterPill>
+
+            <FilterPill
+              selected={readFilter === "all"}
+              onClick={() => setReadFilter("all")}
+              disabled={loading}
+            >
+              Status: All
+            </FilterPill>
+            <FilterPill
+              selected={readFilter === "unread"}
+              onClick={() => setReadFilter("unread")}
+              disabled={loading}
+            >
+              Unread
+            </FilterPill>
+            <FilterPill
+              selected={readFilter === "read"}
+              onClick={() => setReadFilter("read")}
+              disabled={loading}
+            >
+              Read
+            </FilterPill>
+
+            <FilterPill
+              selected={archiveFilter === "inbox"}
+              onClick={() => setArchiveFilter("inbox")}
+              disabled={loading}
+            >
+              Folder: Inbox
+            </FilterPill>
+            <FilterPill
+              selected={archiveFilter === "archived"}
+              onClick={() => setArchiveFilter("archived")}
+              disabled={loading}
+            >
+              Archived
+            </FilterPill>
+            <FilterPill
+              selected={archiveFilter === "all"}
+              onClick={() => setArchiveFilter("all")}
+              disabled={loading}
+            >
+              All mail
+            </FilterPill>
+
+            <FilterPill
+              selected={view === "threads"}
+              onClick={() => setView("threads")}
+              disabled={loading}
+            >
+              View: Threads
+            </FilterPill>
+            <FilterPill
+              selected={view === "messages"}
+              onClick={() => setView("messages")}
+              disabled={loading}
+            >
+              Messages
+            </FilterPill>
+
+            {searchDraft.length ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-full px-3 text-xs font-semibold"
+                onClick={() => setSearchDraft("")}
+                disabled={loading}
+              >
+                Clear search
+              </Button>
+            ) : null}
+          </div>
+
+          {error && (
+            <div className="mb-3 rounded-md border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {error}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="text-sm text-muted">Loading…</div>
+          ) : messages.length === 0 ? (
+            <div className="text-sm text-muted">No messages match your filters.</div>
+          ) : (
+            <div className="rounded-2xl border border-border bg-surface shadow-sm">
+              <div className="flex items-center justify-between border-b border-border/70 px-5 py-3 sm:px-6">
+                <div className="text-sm font-semibold text-muted">
+                  {messages.length} {view === "threads" ? "threads" : "messages"}
+                </div>
+                <div className="hidden text-xs text-muted sm:block">Click a row to open • Hover for actions</div>
+              </div>
+
+              <div className="divide-y divide-border/70">
+                {messages.map((m) => {
+                  const from = parseFrom(m.fromAddress);
+                  const dateText = m.date ? new Date(m.date).toLocaleString() : "";
+                  const providerLabel = m.provider === "google" ? "Gmail" : m.provider;
+                  const threadCount = typeof m.threadCount === "number" ? m.threadCount : 1;
+                  const unreadCount = typeof m.unreadCount === "number" ? m.unreadCount : 0;
+
+                  return (
+                    <div
+                      key={m.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => router.push(`/inbox/${m.id}`)}
+                      onMouseEnter={() => {
+                        if (prefetched.current.has(m.id)) return;
+                        prefetched.current.add(m.id);
+                        router.prefetch(`/inbox/${m.id}`);
+                        prefetchBody(m.id);
+                      }}
+                      onTouchStart={() => {
+                        if (prefetched.current.has(m.id)) return;
+                        prefetched.current.add(m.id);
+                        router.prefetch(`/inbox/${m.id}`);
+                        prefetchBody(m.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") router.push(`/inbox/${m.id}`);
+                      }}
+                      className={cn(
+                        "group flex cursor-pointer items-center gap-3 px-5 py-3 outline-none transition-colors hover:bg-surface-strong sm:px-6",
+                        !m.isRead && "bg-background/30"
+                      )}
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-sm font-semibold text-foreground">
+                        {from.avatar}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="grid min-w-0 grid-cols-1 items-baseline gap-2 sm:grid-cols-[220px_1fr] lg:grid-cols-[260px_1fr]">
+                          <span
+                            className={cn(
+                              "truncate text-sm",
+                              m.isRead ? "text-foreground/80" : "font-semibold text-foreground"
+                            )}
+                          >
+                            {from.display}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-baseline gap-2">
+                              <span
+                                className={cn(
+                                  "truncate text-sm",
+                                  m.isRead
+                                    ? "text-foreground/80"
+                                    : "font-semibold text-foreground"
+                                )}
+                              >
+                                {m.subject || "(No subject)"}
                               </span>
-                            ) : null}
-                            {view === "threads" && unreadCount > 0 ? (
-                              <span className="shrink-0 text-xs font-semibold text-muted">
-                                • {unreadCount} unread
+                              {threadCount > 1 ? (
+                                <span className="shrink-0 text-xs font-semibold text-muted">
+                                  ({threadCount})
+                                </span>
+                              ) : null}
+                              {view === "threads" && unreadCount > 0 ? (
+                                <span className="shrink-0 text-xs font-semibold text-muted">
+                                  • {unreadCount} unread
+                                </span>
+                              ) : null}
+                              <span className="hidden min-w-0 truncate text-sm text-muted sm:inline">
+                                — {m.snippet || ""}
                               </span>
-                            ) : null}
-                            <span className="hidden min-w-0 truncate text-sm text-muted sm:inline">
-                              — {m.snippet || ""}
-                            </span>
-                          </div>
-                          <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
-                            <Badge tone="info" soft>
-                              {providerLabel}
-                            </Badge>
-                            <span>{m.isArchived ? "Archived" : "Inbox"}</span>
-                            <span>•</span>
-                            <span>{m.isRead ? "Read" : "Unread"}</span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
+                              <Badge tone="info" soft>
+                                {providerLabel}
+                              </Badge>
+                              <span>{m.isArchived ? "Archived" : "Inbox"}</span>
+                              <span>•</span>
+                              <span>{m.isRead ? "Read" : "Unread"}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span
-                        className={cn(
-                          "whitespace-nowrap text-xs",
-                          m.isRead ? "text-muted" : "font-semibold text-foreground"
-                        )}
-                      >
-                        {dateText}
-                      </span>
-
-                      <div className="hidden items-center gap-1 group-hover:flex">
-                        <IconPillButton
-                          label={m.isRead ? "Mark as unread" : "Mark as read"}
-                          disabled={loading}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            actOnMessage(m.id, m.isRead ? "markUnread" : "markRead");
-                          }}
-                        >
-                          {m.isRead ? (
-                            <Mail className="h-4 w-4" />
-                          ) : (
-                            <MailOpen className="h-4 w-4" />
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span
+                          className={cn(
+                            "whitespace-nowrap text-xs",
+                            m.isRead ? "text-muted" : "font-semibold text-foreground"
                           )}
-                        </IconPillButton>
-
-                        <IconPillButton
-                          label={m.isArchived ? "Move to inbox" : "Archive"}
-                          disabled={loading}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            actOnMessage(m.id, m.isArchived ? "unarchive" : "archive");
-                          }}
                         >
-                          {m.isArchived ? (
-                            <Inbox className="h-4 w-4" />
-                          ) : (
-                            <Archive className="h-4 w-4" />
-                          )}
-                        </IconPillButton>
+                          {dateText}
+                        </span>
+
+                        <div className="hidden items-center gap-1 group-hover:flex">
+                          <IconPillButton
+                            label={m.isRead ? "Mark as unread" : "Mark as read"}
+                            disabled={loading}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              actOnMessage(m.id, m.isRead ? "markUnread" : "markRead");
+                            }}
+                          >
+                            {m.isRead ? (
+                              <Mail className="h-4 w-4" />
+                            ) : (
+                              <MailOpen className="h-4 w-4" />
+                            )}
+                          </IconPillButton>
+
+                          <IconPillButton
+                            label={m.isArchived ? "Move to inbox" : "Archive"}
+                            disabled={loading}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              actOnMessage(m.id, m.isArchived ? "unarchive" : "archive");
+                            }}
+                          >
+                            {m.isArchived ? (
+                              <Inbox className="h-4 w-4" />
+                            ) : (
+                              <Archive className="h-4 w-4" />
+                            )}
+                          </IconPillButton>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-xs text-muted">
+              Page {page}
+              {hasMore ? "" : " • End"}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => loadMessages({ reset: true })}
+                disabled={loading}
+              >
+                Reload
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const next = page + 1;
+                  loadMessages({ page: next });
+                }}
+                disabled={loading || !hasMore}
+              >
+                Load more
+              </Button>
             </div>
           </div>
-        )}
-
-        <div className="flex items-center justify-between">
-          <div className="text-xs text-muted">
-            Page {page}
-            {hasMore ? "" : " • End"}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => loadMessages({ reset: true })}
-              disabled={loading}
-            >
-              Reload
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                const next = page + 1;
-                loadMessages({ page: next });
-              }}
-              disabled={loading || !hasMore}
-            >
-              Load more
-            </Button>
-          </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

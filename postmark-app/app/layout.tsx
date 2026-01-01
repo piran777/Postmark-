@@ -52,7 +52,8 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Providers>
-          <div className="fixed right-4 top-4 z-40">
+          {/* Keep theme toggle accessible but out of the way of page headers */}
+          <div className="fixed bottom-4 right-4 z-40">
             <ThemeToggle />
           </div>
         {children}
