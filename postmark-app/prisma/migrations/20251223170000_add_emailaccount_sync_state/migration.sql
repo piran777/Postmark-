@@ -6,3 +6,4 @@ ALTER TABLE "EmailAccount" ADD COLUMN "lastSyncError" TEXT;
 
 
 
+

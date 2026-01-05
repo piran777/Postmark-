@@ -112,6 +112,7 @@ export default async function MessageDetailPage(props: { params: Promise<{ id: s
             messageId={msg.id}
             isRead={msg.isRead}
             isArchived={msg.isArchived}
+            threadCount={threadMessages.length}
           />
 
           <div className="hidden items-center gap-2 text-xs text-muted sm:flex">

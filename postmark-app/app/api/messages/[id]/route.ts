@@ -6,6 +6,19 @@ import { google } from "googleapis";
 
 type Action = "markRead" | "markUnread" | "archive" | "unarchive";
 
+function coerceLabelIds(labels: unknown): string[] {
+  if (!Array.isArray(labels)) return [];
+  return labels.filter((v): v is string => typeof v === "string" && v.length > 0);
+}
+
+function applyLabelMutationToLabels(labels: unknown, mut: { add: string[]; remove: string[] }): string[] {
+  const base = coerceLabelIds(labels);
+  const removed = base.filter((l) => !mut.remove.includes(l));
+  const set = new Set<string>(removed);
+  for (const a of mut.add) set.add(a);
+  return Array.from(set);
+}
+
 function decodeBase64Url(data: string): string {
   const normalized = data.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
@@ -233,6 +246,7 @@ export async function PATCH(
   const { id } = await ctx.params;
   const body = await req.json().catch(() => ({}));
   const action = body?.action as Action | undefined;
+  const applyToThread = body?.applyToThread === true;
 
   if (
     action !== "markRead" &&
@@ -283,28 +297,85 @@ export async function PATCH(
 
     const { add, remove } = labelMutation(action);
 
-    const modifyRes = await gmail.users.messages.modify({
-      userId: "me",
-      id: msg.providerMessageId,
-      requestBody: {
-        addLabelIds: add,
-        removeLabelIds: remove,
+    // Gmail-like behavior: actions apply to the whole conversation (thread) when possible.
+    if (applyToThread && msg.threadId) {
+      await gmail.users.threads.modify({
+        userId: "me",
+        id: msg.threadId,
+        requestBody: {
+          addLabelIds: add,
+          removeLabelIds: remove,
+        },
+      });
+
+      const inThread = await prisma.message.findMany({
+        where: {
+          userId: user.id,
+          emailAccountId: msg.emailAccountId,
+          threadId: msg.threadId,
+        },
+        select: { id: true, labels: true },
+      });
+
+      const now = new Date();
+      await prisma.$transaction(
+        inThread.map((m) => {
+          const labelIds = applyLabelMutationToLabels(m.labels, { add, remove });
+          const isRead = !labelIds.includes("UNREAD");
+          const isArchived = !labelIds.includes("INBOX");
+          return prisma.message.update({
+            where: { id: m.id },
+            data: {
+              isRead,
+              isArchived,
+              labels: labelIds,
+              syncedAt: now,
+            },
+          });
+        })
+      );
+    } else {
+      const modifyRes = await gmail.users.messages.modify({
+        userId: "me",
+        id: msg.providerMessageId,
+        requestBody: {
+          addLabelIds: add,
+          removeLabelIds: remove,
+        },
+      });
+
+      const labelIds = modifyRes.data.labelIds ?? [];
+      const isRead = !labelIds.includes("UNREAD");
+      const isArchived = !labelIds.includes("INBOX");
+
+      await prisma.message.update({
+        where: { id: msg.id },
+        data: {
+          isRead,
+          isArchived,
+          labels: labelIds,
+          syncedAt: new Date(),
+        },
+      });
+    }
+
+    const updated = await prisma.message.findFirst({
+      where: { id: msg.id, userId: user.id },
+      select: {
+        id: true,
+        provider: true,
+        subject: true,
+        fromAddress: true,
+        toAddress: true,
+        date: true,
+        isRead: true,
+        isArchived: true,
+        snippet: true,
       },
     });
-
-    const labelIds = modifyRes.data.labelIds ?? [];
-    const isRead = !labelIds.includes("UNREAD");
-    const isArchived = !labelIds.includes("INBOX");
-
-    const updated = await prisma.message.update({
-      where: { id: msg.id },
-      data: {
-        isRead,
-        isArchived,
-        labels: labelIds,
-        syncedAt: new Date(),
-      },
-    });
+    if (!updated) {
+      return Response.json({ error: "Message action applied but local record missing." }, { status: 500 });
+    }
 
     return Response.json({
       item: {

@@ -93,6 +93,7 @@ export default function InboxPage() {
   const searchTimer = useRef<number | null>(null);
   const filtersRef = useRef<HTMLDivElement | null>(null);
   const filtersButtonRef = useRef<HTMLButtonElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("all");
@@ -102,6 +103,8 @@ export default function InboxPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(25);
   const [hasMore, setHasMore] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [keyboardNavActive, setKeyboardNavActive] = useState(false);
 
   const [provider, setProvider] = useState<string>("all");
   const [readFilter, setReadFilter] = useState<"all" | "read" | "unread">("all");
@@ -279,14 +282,19 @@ export default function InboxPage() {
     }
   }
 
-  async function actOnMessage(messageId: string, action: string) {
+  async function actOnMessage(
+    messageId: string,
+    action: string,
+    opts?: { applyToThread?: boolean }
+  ) {
     setLoading(true);
     setError(null);
     try {
+      const applyToThread = opts?.applyToThread ?? (view === "threads");
       const res = await fetch(`/api/messages/${messageId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, applyToThread }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -295,7 +303,24 @@ export default function InboxPage() {
       const data = await res.json();
       const updated = data.item as Message | undefined;
       if (updated?.id) {
-        setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+        setMessages((prev) => {
+          const merged = prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m));
+
+          const matchesRead =
+            readFilter === "all" ||
+            (readFilter === "read" && updated.isRead) ||
+            (readFilter === "unread" && !updated.isRead);
+
+          const matchesArchive =
+            archiveFilter === "all" ||
+            (archiveFilter === "inbox" && !updated.isArchived) ||
+            (archiveFilter === "archived" && updated.isArchived);
+
+          if (!matchesRead || !matchesArchive) {
+            return merged.filter((m) => m.id !== updated.id);
+          }
+          return merged;
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
@@ -366,6 +391,97 @@ export default function InboxPage() {
   useEffect(() => {
     loadAccounts();
   }, []);
+
+  // Keep a stable selection for keyboard navigation.
+  useEffect(() => {
+    if (messages.length === 0) {
+      if (selectedId !== null) setSelectedId(null);
+      return;
+    }
+    if (!selectedId) {
+      setSelectedId(messages[0]?.id ?? null);
+      return;
+    }
+    if (!messages.some((m) => m.id === selectedId)) {
+      setSelectedId(messages[0]?.id ?? null);
+    }
+  }, [messages, selectedId]);
+
+  // Gmail-ish keyboard shortcuts: j/k to move, Enter to open, / to focus search,
+  // e to archive, r to toggle read.
+  useEffect(() => {
+    function isTypingContext(target: EventTarget | null) {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      if (el.isContentEditable) return true;
+      return false;
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.defaultPrevented) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingContext(e.target)) return;
+      if (showFilters) return;
+
+      const items = messages;
+      if (!items.length) return;
+
+      const idx = selectedId ? items.findIndex((m) => m.id === selectedId) : -1;
+      const currentIndex = idx >= 0 ? idx : 0;
+
+      if (e.key === "/") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setKeyboardNavActive(true);
+        const next = Math.min(items.length - 1, currentIndex + 1);
+        setSelectedId(items[next]?.id ?? null);
+        return;
+      }
+
+      if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setKeyboardNavActive(true);
+        const next = Math.max(0, currentIndex - 1);
+        setSelectedId(items[next]?.id ?? null);
+        return;
+      }
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        setKeyboardNavActive(true);
+        const id = items[currentIndex]?.id;
+        if (id) router.push(`/inbox/${id}`);
+        return;
+      }
+
+      if (loading) return;
+
+      if (e.key === "e") {
+        e.preventDefault();
+        setKeyboardNavActive(true);
+        const m = items[currentIndex];
+        if (m && !m.isArchived) actOnMessage(m.id, "archive");
+        return;
+      }
+
+      if (e.key === "r") {
+        e.preventDefault();
+        setKeyboardNavActive(true);
+        const m = items[currentIndex];
+        if (m) actOnMessage(m.id, m.isRead ? "markUnread" : "markRead");
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [messages, selectedId, router, loading, showFilters]);
 
   // When a specific account is selected, make provider follow that account (prevents contradictory state).
   useEffect(() => {
@@ -452,6 +568,7 @@ export default function InboxPage() {
             <div className="relative w-full max-w-[720px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <input
+                ref={searchInputRef}
                 value={searchDraft}
                 onChange={(e) => setSearchDraft(e.target.value)}
                 placeholder="Search mail"
@@ -922,7 +1039,15 @@ export default function InboxPage() {
                       key={m.id}
                       role="button"
                       tabIndex={0}
-                      onClick={() => router.push(`/inbox/${m.id}`)}
+                      onClick={() => {
+                        setKeyboardNavActive(false);
+                        setSelectedId(m.id);
+                        router.push(`/inbox/${m.id}`);
+                      }}
+                      onFocus={() => {
+                        setKeyboardNavActive(false);
+                        setSelectedId(m.id);
+                      }}
                       onMouseEnter={() => {
                         if (prefetched.current.has(m.id)) return;
                         prefetched.current.add(m.id);
@@ -940,7 +1065,10 @@ export default function InboxPage() {
                       }}
                       className={cn(
                         "group flex cursor-pointer items-center gap-3 border-b border-border-soft px-5 py-3 outline-none transition-colors hover:bg-surface-strong last:border-b-0 sm:px-6",
-                        !m.isRead && "bg-background/30"
+                        !m.isRead && "bg-background/30",
+                        selectedId === m.id &&
+                          keyboardNavActive &&
+                          "relative bg-surface-strong before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:bg-primary/50 before:content-['']"
                       )}
                     >
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-sm font-semibold text-foreground">

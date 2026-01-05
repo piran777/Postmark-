@@ -18,6 +18,7 @@ type Props = {
   messageId: string;
   isRead: boolean;
   isArchived: boolean;
+  threadCount?: number;
 };
 
 function IconButton(props: {
@@ -47,6 +48,7 @@ export function MessageToolbar({ messageId, isRead, isArchived }: Props) {
   const [loading, setLoading] = useState(false);
   const [localRead, setLocalRead] = useState(isRead);
   const [localArchived, setLocalArchived] = useState(isArchived);
+  const [applyToThread, setApplyToThread] = useState(true);
 
   const markLabel = useMemo(
     () => (localRead ? "Mark as unread" : "Mark as read"),
@@ -63,7 +65,7 @@ export function MessageToolbar({ messageId, isRead, isArchived }: Props) {
       const res = await fetch(`/api/messages/${messageId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, applyToThread }),
       });
       if (!res.ok) {
         // Keep it simple for now; inbox page already shows detailed error banners.
@@ -116,9 +118,24 @@ export function MessageToolbar({ messageId, isRead, isArchived }: Props) {
           <Trash2 className="h-4 w-4" />
         </IconButton>
       </div>
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-9 rounded-full px-3 text-xs"
+          disabled={loading}
+          onClick={() => setApplyToThread((v) => !v)}
+          title="Toggle whether actions apply to the whole conversation"
+        >
+          {applyToThread ? "Conversation" : "Message"}
+        </Button>
+      </div>
     </div>
   );
 }
+
 
 
 
