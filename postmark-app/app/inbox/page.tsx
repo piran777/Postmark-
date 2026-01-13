@@ -1000,7 +1000,8 @@ export default function InboxPage() {
                 >
                   All
                 </FilterPill>
-                {visibleAccounts.map((a) => (
+                {/* Always show ALL accounts in sidebar so user can switch between them */}
+                {accounts.map((a) => (
                   <FilterPill
                     key={a.id}
                     selected={accountId === a.id}
@@ -1016,21 +1017,23 @@ export default function InboxPage() {
                   variant="primary"
                   size="sm"
                   onClick={() => {
-                    window.location.href = "/api/auth/signin?callbackUrl=/inbox";
+                    window.location.href = "/api/link/google";
                   }}
                   disabled={loading}
                   className="w-full"
                 >
-                  + Connect Account
+                  + Link Gmail
                 </Button>
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   size="sm"
-                  onClick={disconnectGmail}
+                  onClick={() => {
+                    window.location.href = "/api/link/microsoft";
+                  }}
                   disabled={loading}
                   className="w-full"
                 >
-                  Disconnect Gmail
+                  + Link Outlook
                 </Button>
               </div>
             </div>

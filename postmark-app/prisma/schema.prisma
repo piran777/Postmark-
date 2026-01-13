@@ -11,6 +11,8 @@ generator client {
 model User {
   id            String         @id @default(uuid())
   email         String         @unique
+  passwordHash  String?        // For email/password auth (nullable for OAuth-only users)
+  name          String?
   createdAt     DateTime       @default(now())
   emailAccounts EmailAccount[]
   messages      Message[]
