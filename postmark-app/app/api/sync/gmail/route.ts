@@ -3,21 +3,7 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { google } from "googleapis";
 import { NextRequest } from "next/server";
-
-function gmailAuth(accessToken?: string, refreshToken?: string) {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
-    throw new Error("Missing Google OAuth env vars");
-  }
-
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
-  oauth2Client.setCredentials({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-  });
-  return oauth2Client;
-}
+import { createGoogleOAuthClient } from "@/lib/google-auth";
 
 function isGmailHistoryTooOld(err: any): boolean {
   const msg = String(err?.message || "").toLowerCase();
@@ -99,10 +85,12 @@ export async function POST(req: NextRequest) {
         | undefined
         | null;
 
-      const oauth2Client = gmailAuth(
-        account.accessToken ?? undefined,
-        account.refreshToken ?? undefined
-      );
+      // Use OAuth client with automatic token refresh + DB persistence
+      const oauth2Client = createGoogleOAuthClient({
+        id: account.id,
+        accessToken: account.accessToken,
+        refreshToken: account.refreshToken,
+      });
       const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
       // Current mailbox historyId (cursor) - used for true delta sync.

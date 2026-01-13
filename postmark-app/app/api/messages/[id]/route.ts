@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { google } from "googleapis";
+import { createGoogleOAuthClient } from "@/lib/google-auth";
 
 type Action = "markRead" | "markUnread" | "archive" | "unarchive";
 
@@ -34,6 +35,64 @@ function stripScripts(html: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Microsoft Graph API helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Refresh Microsoft access token if needed
+async function getValidMicrosoftToken(account: {
+  id: string;
+  accessToken: string | null;
+  refreshToken: string | null;
+  expiresAt: Date | null;
+}): Promise<string | null> {
+  // Check if token is still valid (with 60s buffer)
+  const tokenValid = account.accessToken && 
+    account.expiresAt && 
+    new Date(account.expiresAt) > new Date(Date.now() + 60000);
+  
+  if (tokenValid) {
+    return account.accessToken;
+  }
+
+  // Need to refresh
+  if (!account.refreshToken) {
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    client_id: process.env.MICROSOFT_CLIENT_ID!,
+    client_secret: process.env.MICROSOFT_CLIENT_SECRET!,
+    refresh_token: account.refreshToken,
+    grant_type: "refresh_token",
+    scope: "openid email profile Mail.Read Mail.ReadWrite offline_access",
+  });
+
+  const res = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+
+  if (!res.ok) {
+    console.error("[Microsoft] Token refresh failed:", await res.text());
+    return null;
+  }
+
+  const data = await res.json();
+  
+  // Update the stored tokens
+  await prisma.emailAccount.update({
+    where: { id: account.id },
+    data: {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || account.refreshToken,
+      expiresAt: data.expires_in
+        ? new Date(Date.now() + data.expires_in * 1000)
+        : null,
+    },
+  });
+
+  console.log(`[Microsoft] Token refreshed for account ${account.id}`);
+  return data.access_token;
+}
 
 async function fetchMicrosoftBody(opts: {
   providerMessageId: string;
@@ -437,9 +496,16 @@ export async function PATCH(
     // Microsoft Graph API actions
     // ─────────────────────────────────────────────────────────────────────────
     if (account.provider === "microsoft") {
-      const accessToken = account.accessToken;
+      // Get valid access token (refresh if needed)
+      const accessToken = await getValidMicrosoftToken({
+        id: account.id,
+        accessToken: account.accessToken,
+        refreshToken: account.refreshToken,
+        expiresAt: account.expiresAt,
+      });
+      
       if (!accessToken) {
-        return Response.json({ error: "Missing Microsoft access token" }, { status: 400 });
+        return Response.json({ error: "Unable to get valid Microsoft token. Please reconnect your account." }, { status: 400 });
       }
 
       let success = false;
@@ -506,10 +572,12 @@ export async function PATCH(
       );
     }
 
-    const oauth2Client = gmailAuth(
-      account.accessToken ?? undefined,
-      account.refreshToken ?? undefined
-    );
+    // Use OAuth client with automatic token refresh + DB persistence
+    const oauth2Client = createGoogleOAuthClient({
+      id: account.id,
+      accessToken: account.accessToken,
+      refreshToken: account.refreshToken,
+    });
     const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
     const { add, remove } = labelMutation(action);
