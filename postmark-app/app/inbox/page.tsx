@@ -19,6 +19,7 @@ import {
   Star,
   Trash2,
   PenSquare,
+  X,
 } from "lucide-react";
 
 type Message = {
@@ -424,6 +425,29 @@ export default function InboxPage() {
       setMessages([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Disconnect failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function unlinkAccount(accountId: string, emailAddress: string) {
+    if (!confirm(`Unlink ${emailAddress}? This will remove all synced messages from this account.`)) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Unlink failed");
+      }
+      // Reload accounts and messages
+      await loadAccounts();
+      setAccountId("all");
+      await loadMessages({ reset: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unlink failed");
     } finally {
       setLoading(false);
     }
@@ -1007,14 +1031,28 @@ export default function InboxPage() {
                 </FilterPill>
                 {/* Always show ALL accounts in sidebar so user can switch between them */}
                 {accounts.map((a) => (
-                  <FilterPill
-                    key={a.id}
-                    selected={accountId === a.id}
-                    onClick={() => setAccountId(a.id)}
-                    disabled={loading}
-                  >
-                    {a.provider === "google" ? "Gmail" : a.provider === "microsoft" ? "Outlook" : a.provider}: {a.emailAddress}
-                  </FilterPill>
+                  <div key={a.id} className="group relative">
+                    <FilterPill
+                      selected={accountId === a.id}
+                      onClick={() => setAccountId(a.id)}
+                      disabled={loading}
+                      className="pr-6"
+                    >
+                      {a.provider === "google" ? "Gmail" : a.provider === "microsoft" ? "Outlook" : a.provider}: {a.emailAddress}
+                    </FilterPill>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        unlinkAccount(a.id, a.emailAddress);
+                      }}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-muted hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title={`Unlink ${a.emailAddress}`}
+                      disabled={loading}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
                 ))}
               </div>
               <div className="mt-3 flex flex-col gap-2">
