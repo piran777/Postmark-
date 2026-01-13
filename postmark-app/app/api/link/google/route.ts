@@ -33,7 +33,8 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", scope);
   authUrl.searchParams.set("access_type", "offline");
-  authUrl.searchParams.set("prompt", "consent");
+  // select_account forces the account picker, consent ensures we get refresh token
+  authUrl.searchParams.set("prompt", "select_account consent");
   authUrl.searchParams.set("state", state);
 
   return NextResponse.redirect(authUrl.toString());

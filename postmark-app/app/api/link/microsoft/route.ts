@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", scope);
-  authUrl.searchParams.set("prompt", "consent");
+  // select_account forces the account picker to show (for linking multiple accounts)
+  authUrl.searchParams.set("prompt", "select_account");
   authUrl.searchParams.set("state", state);
 
   return NextResponse.redirect(authUrl.toString());
