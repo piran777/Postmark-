@@ -68,7 +68,7 @@ function SignInForm() {
           onClick={() =>
             signIn(
               "google",
-              { callbackUrl: "/users" },
+              { callbackUrl: "/inbox" },
               {
                 scope:
                   "openid email profile https://www.googleapis.com/auth/gmail.modify",
@@ -79,6 +79,24 @@ function SignInForm() {
           }
         >
           Sign in with Google
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full"
+          onClick={() =>
+            signIn(
+              "azure-ad",
+              { callbackUrl: "/inbox" },
+              {
+                scope:
+                  "openid email profile Mail.Read Mail.ReadWrite offline_access",
+                prompt: "consent",
+              }
+            )
+          }
+        >
+          Sign in with Microsoft
         </Button>
       </CardContent>
     </Card>

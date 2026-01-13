@@ -35,6 +35,14 @@ model EmailAccount {
   lastSyncError String?
   // Gmail History API cursor for true delta sync (stringified numeric historyId).
   gmailHistoryId String?
+  
+  // IMAP connection settings (for non-OAuth providers like Outlook via app password)
+  imapHost     String?
+  imapPort     Int?
+  imapUser     String?
+  imapPassword String?   // App password or regular password
+  smtpHost     String?
+  smtpPort     Int?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]

@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
+import AzureADProvider from "next-auth/providers/azure-ad";
 import prisma from "@/lib/prisma";
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
@@ -14,6 +15,17 @@ export const authOptions: NextAuthOptions = {
         params: {
           scope: "openid email profile https://www.googleapis.com/auth/gmail.modify",
           access_type: "offline",
+          prompt: "consent",
+        },
+      },
+    }),
+    AzureADProvider({
+      clientId: process.env.MICROSOFT_CLIENT_ID!,
+      clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+      tenantId: "common", // Allows both personal and work/school accounts
+      authorization: {
+        params: {
+          scope: "openid email profile Mail.Read Mail.ReadWrite offline_access",
           prompt: "consent",
         },
       },
@@ -46,7 +58,7 @@ export const authOptions: NextAuthOptions = {
     signIn: "/auth/signin",
   },
   events: {
-    // When connecting Google, persist tokens into EmailAccount and ensure a User exists.
+    // When connecting Google or Microsoft, persist tokens into EmailAccount and ensure a User exists.
     async signIn({ user, account }) {
       if (account?.provider === "google") {
         const email = user.email;
@@ -94,6 +106,53 @@ export const authOptions: NextAuthOptions = {
           },
         });
       }
+
+      // Handle Microsoft (Azure AD) sign-in
+      if (account?.provider === "azure-ad") {
+        const email = user.email;
+        if (typeof email !== "string" || !email) return;
+        const providerAccountId = account.providerAccountId;
+        if (typeof providerAccountId !== "string" || !providerAccountId) return;
+
+        const dbUser = await prisma.user.upsert({
+          where: { email },
+          update: {},
+          create: { email },
+        });
+
+        await prisma.emailAccount.upsert({
+          where: {
+            provider_providerAccountId: {
+              provider: "microsoft",
+              providerAccountId,
+            },
+          },
+          create: {
+            userId: dbUser.id,
+            provider: "microsoft",
+            providerAccountId,
+            emailAddress: email,
+            accessToken: account.access_token ?? null,
+            refreshToken: account.refresh_token ?? null,
+            expiresAt: account.expires_at
+              ? new Date(account.expires_at * 1000)
+              : null,
+            scope: account.scope ?? null,
+            tokenType: account.token_type ?? null,
+          },
+          update: {
+            userId: dbUser.id,
+            emailAddress: email,
+            ...(account.access_token ? { accessToken: account.access_token } : {}),
+            ...(account.refresh_token ? { refreshToken: account.refresh_token } : {}),
+            ...(typeof account.expires_at === "number"
+              ? { expiresAt: new Date(account.expires_at * 1000) }
+              : {}),
+            ...(account.scope ? { scope: account.scope } : {}),
+            ...(account.token_type ? { tokenType: account.token_type } : {}),
+          },
+        });
+      }
     },
   },
   callbacks: {
@@ -102,12 +161,23 @@ export const authOptions: NextAuthOptions = {
         token.name = user.name;
         token.email = user.email;
       }
+      // Look up the database user ID by email and attach it to the token
+      if (token.email && !token.userId) {
+        const dbUser = await prisma.user.findUnique({
+          where: { email: token.email as string },
+        });
+        if (dbUser) {
+          token.userId = dbUser.id;
+        }
+      }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.name = token.name;
         session.user.email = token.email as string;
+        // Attach the user ID to the session
+        (session.user as any).id = token.userId as string | undefined;
       }
       return session;
     },

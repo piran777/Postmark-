@@ -217,19 +217,32 @@ export default function InboxPage() {
     }
   }
 
-  async function syncSelectedGmail() {
+  async function syncSelected() {
     setLoading(true);
     setError(null);
     try {
       if (accountId === "all") {
-        throw new Error("Select an account to sync, or use “Sync all”.");
+        throw new Error("Select an account to sync, or use 'Sync all'.");
       }
+      
+      // Find the selected account to determine provider
+      const selectedAcct = accounts.find((a) => a.id === accountId);
+      if (!selectedAcct) {
+        throw new Error("Account not found");
+      }
+
       const params = new URLSearchParams();
-      params.set("mode", "delta");
       params.set("maxResults", "25");
       params.set("emailAccountId", accountId);
 
-      const res = await fetch(`/api/sync/gmail?${params.toString()}`, {
+      let endpoint = "/api/sync/gmail";
+      if (selectedAcct.provider === "microsoft") {
+        endpoint = "/api/sync/microsoft";
+      } else {
+        params.set("mode", "delta");
+      }
+
+      const res = await fetch(`${endpoint}?${params.toString()}`, {
         method: "POST",
       });
       if (!res.ok) {
@@ -280,6 +293,75 @@ export default function InboxPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function syncMicrosoft(accountId?: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("maxResults", "25");
+      if (accountId) {
+        params.set("emailAccountId", accountId);
+      } else {
+        params.set("all", "true");
+      }
+
+      const res = await fetch(`/api/sync/microsoft?${params.toString()}`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Microsoft sync failed");
+      }
+      await loadMessages({ reset: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Microsoft sync failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function syncAll() {
+    setLoading(true);
+    setError(null);
+    const errors: string[] = [];
+
+    // Sync Gmail accounts
+    try {
+      const params = new URLSearchParams();
+      params.set("mode", "delta");
+      params.set("maxResults", "25");
+      params.set("all", "true");
+      const res = await fetch(`/api/sync/gmail?${params.toString()}`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        errors.push(`Gmail: ${body?.error || "failed"}`);
+      }
+    } catch (err) {
+      errors.push(`Gmail: ${err instanceof Error ? err.message : "failed"}`);
+    }
+
+    // Sync Microsoft accounts
+    try {
+      const params = new URLSearchParams();
+      params.set("maxResults", "25");
+      params.set("all", "true");
+      const res = await fetch(`/api/sync/microsoft?${params.toString()}`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        errors.push(`Microsoft: ${body?.error || "failed"}`);
+      }
+    } catch (err) {
+      errors.push(`Microsoft: ${err instanceof Error ? err.message : "failed"}`);
+    }
+
+    if (errors.length > 0) {
+      setError(`Sync completed with errors: ${errors.join(", ")}`);
+    }
+
+    await loadMessages({ reset: true });
+    setLoading(false);
   }
 
   async function actOnMessage(
@@ -540,13 +622,17 @@ export default function InboxPage() {
   const providerLabelForHeader =
     selectedAccount?.provider === "google"
       ? "Gmail"
-      : selectedAccount?.provider
-        ? selectedAccount.provider
-        : provider === "google"
-          ? "Gmail"
-          : provider === "all"
-            ? "All"
-            : provider;
+      : selectedAccount?.provider === "microsoft"
+        ? "Outlook"
+        : selectedAccount?.provider
+          ? selectedAccount.provider
+          : provider === "google"
+            ? "Gmail"
+            : provider === "microsoft"
+              ? "Outlook"
+              : provider === "all"
+                ? "All"
+                : provider;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -667,6 +753,13 @@ export default function InboxPage() {
                         >
                           Gmail
                         </FilterPill>
+                        <FilterPill
+                          selected={provider === "microsoft"}
+                          onClick={() => setProvider("microsoft")}
+                          disabled={loading}
+                        >
+                          Outlook
+                        </FilterPill>
                       </div>
                     </div>
 
@@ -741,7 +834,7 @@ export default function InboxPage() {
                             onClick={() => setAccountId(a.id)}
                             disabled={loading}
                           >
-                            {a.provider === "google" ? "Gmail" : a.provider}: {a.emailAddress}
+                            {a.provider === "google" ? "Gmail" : a.provider === "microsoft" ? "Outlook" : a.provider}: {a.emailAddress}
                           </FilterPill>
                         ))}
                       </div>
@@ -781,7 +874,7 @@ export default function InboxPage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={syncSelectedGmail}
+              onClick={syncSelected}
               disabled={loading || accountId === "all"}
               title={accountId === "all" ? "Select an account to sync" : "Sync selected"}
               className="hidden sm:inline-flex"
@@ -791,7 +884,7 @@ export default function InboxPage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={syncAllGmail}
+              onClick={syncAll}
               disabled={loading}
               className="hidden sm:inline-flex"
             >
@@ -914,11 +1007,22 @@ export default function InboxPage() {
                     onClick={() => setAccountId(a.id)}
                     disabled={loading}
                   >
-                    {a.provider === "google" ? "Gmail" : a.provider}: {a.emailAddress}
+                    {a.provider === "google" ? "Gmail" : a.provider === "microsoft" ? "Outlook" : a.provider}: {a.emailAddress}
                   </FilterPill>
                 ))}
               </div>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-col gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    window.location.href = "/api/auth/signin?callbackUrl=/inbox";
+                  }}
+                  disabled={loading}
+                  className="w-full"
+                >
+                  + Connect Account
+                </Button>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -1030,7 +1134,7 @@ export default function InboxPage() {
                 {messages.map((m) => {
                   const from = parseFrom(m.fromAddress);
                   const dateText = m.date ? new Date(m.date).toLocaleString() : "";
-                  const providerLabel = m.provider === "google" ? "Gmail" : m.provider;
+                  const providerLabel = m.provider === "google" ? "Gmail" : m.provider === "microsoft" ? "Outlook" : m.provider;
                   const threadCount = typeof m.threadCount === "number" ? m.threadCount : 1;
                   const unreadCount = typeof m.unreadCount === "number" ? m.unreadCount : 0;
 
