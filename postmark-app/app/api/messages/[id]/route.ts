@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 import { google } from "googleapis";
 import { createGoogleOAuthClient } from "@/lib/google-auth";
 
-type Action = "markRead" | "markUnread" | "archive" | "unarchive";
+type Action = "markRead" | "markUnread" | "archive" | "unarchive" | "delete";
 
 function coerceLabelIds(labels: unknown): string[] {
   if (!Array.isArray(labels)) return [];
@@ -225,6 +225,40 @@ async function microsoftUnarchive(accessToken: string, messageId: string): Promi
   return moveRes.ok;
 }
 
+async function microsoftDelete(accessToken: string, messageId: string): Promise<boolean> {
+  // Move to Deleted Items folder (soft delete)
+  const foldersRes = await fetch(
+    `https://graph.microsoft.com/v1.0/me/mailFolders/deleteditems`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  if (!foldersRes.ok) {
+    console.error("Failed to get Deleted Items folder:", foldersRes.status);
+    return false;
+  }
+
+  const deletedFolder = await foldersRes.json();
+
+  const moveRes = await fetch(
+    `https://graph.microsoft.com/v1.0/me/messages/${messageId}/move`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ destinationId: deletedFolder.id }),
+    }
+  );
+
+  return moveRes.ok;
+}
+
 function findMimeParts(payload: any, out: Array<{ mimeType: string; data: string }>) {
   if (!payload) return;
   const mimeType = payload.mimeType as string | undefined;
@@ -437,6 +471,9 @@ function labelMutation(action: Action): { add: string[]; remove: string[] } {
       return { add: [], remove: ["INBOX"] };
     case "unarchive":
       return { add: ["INBOX"], remove: [] };
+    case "delete":
+      // Delete == move to TRASH
+      return { add: ["TRASH"], remove: ["INBOX", "UNREAD"] };
   }
 }
 
@@ -458,7 +495,8 @@ export async function PATCH(
     action !== "markRead" &&
     action !== "markUnread" &&
     action !== "archive" &&
-    action !== "unarchive"
+    action !== "unarchive" &&
+    action !== "delete"
   ) {
     return Response.json({ error: "Invalid action" }, { status: 400 });
   }
@@ -529,10 +567,19 @@ export async function PATCH(
           success = await microsoftUnarchive(accessToken, msg.providerMessageId);
           newIsArchived = false;
           break;
+        case "delete":
+          success = await microsoftDelete(accessToken, msg.providerMessageId);
+          break;
       }
 
       if (!success) {
         return Response.json({ error: `Microsoft ${action} failed` }, { status: 500 });
+      }
+
+      // If deleted, remove from local DB
+      if (action === "delete") {
+        await prisma.message.delete({ where: { id: msg.id } });
+        return Response.json({ item: null, deleted: true });
       }
 
       await prisma.message.update({
@@ -642,6 +689,12 @@ export async function PATCH(
           syncedAt: new Date(),
         },
       });
+    }
+
+    // If deleted, remove from local DB and return early
+    if (action === "delete") {
+      await prisma.message.delete({ where: { id: msg.id } });
+      return Response.json({ item: null, deleted: true });
     }
 
     const updated = await prisma.message.findFirst({

@@ -59,7 +59,7 @@ export function MessageToolbar({ messageId, isRead, isArchived }: Props) {
     [localArchived]
   );
 
-  async function act(action: "markRead" | "markUnread" | "archive" | "unarchive") {
+  async function act(action: "markRead" | "markUnread" | "archive" | "unarchive" | "delete") {
     setLoading(true);
     try {
       const res = await fetch(`/api/messages/${messageId}`, {
@@ -74,6 +74,13 @@ export function MessageToolbar({ messageId, isRead, isArchived }: Props) {
         return;
       }
       const data = await res.json().catch(() => ({}));
+      
+      // If deleted, go back to inbox
+      if (data?.deleted) {
+        router.push("/inbox");
+        return;
+      }
+      
       const item = data?.item;
       if (typeof item?.isRead === "boolean") setLocalRead(item.isRead);
       if (typeof item?.isArchived === "boolean") setLocalArchived(item.isArchived);
@@ -81,6 +88,11 @@ export function MessageToolbar({ messageId, isRead, isArchived }: Props) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleDelete() {
+    if (!confirm("Move this email to trash?")) return;
+    await act("delete");
   }
 
   return (
@@ -114,7 +126,7 @@ export function MessageToolbar({ messageId, isRead, isArchived }: Props) {
           <RefreshCcw className="h-4 w-4" />
         </IconButton>
 
-        <IconButton label="Delete (coming soon)" disabled>
+        <IconButton label="Delete" disabled={loading} onClick={handleDelete}>
           <Trash2 className="h-4 w-4" />
         </IconButton>
       </div>
