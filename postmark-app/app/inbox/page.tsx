@@ -108,7 +108,7 @@ export default function InboxPage() {
 
   const [provider, setProvider] = useState<string>("all");
   const [readFilter, setReadFilter] = useState<"all" | "read" | "unread">("all");
-  const [archiveFilter, setArchiveFilter] = useState<"inbox" | "archived" | "all">(
+  const [archiveFilter, setArchiveFilter] = useState<"inbox" | "archived" | "trash" | "all">(
     "inbox"
   );
   const [view, setView] = useState<"threads" | "messages">("threads");
@@ -173,6 +173,7 @@ export default function InboxPage() {
     if (readFilter === "unread") params.set("isRead", "false");
     if (archiveFilter === "inbox") params.set("isArchived", "false");
     if (archiveFilter === "archived") params.set("isArchived", "true");
+    if (archiveFilter === "trash") params.set("isDeleted", "true");
     if (searchQuery.trim().length) params.set("q", searchQuery.trim());
     return params.toString();
   }
@@ -979,12 +980,16 @@ export default function InboxPage() {
               </button>
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-muted opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                disabled
-                title="Coming soon"
+                className={cn(
+                  "flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold",
+                  archiveFilter === "trash"
+                    ? "bg-surface-strong text-foreground"
+                    : "text-foreground hover:bg-surface-strong"
+                )}
+                onClick={() => setArchiveFilter("trash")}
               >
                 <span className="inline-flex items-center gap-2">
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4 text-muted" />
                   Trash
                 </span>
               </button>
@@ -1103,6 +1108,21 @@ export default function InboxPage() {
                 )}
               >
                 All mail
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setArchiveFilter("trash");
+                  setReadFilter("all");
+                }}
+                className={cn(
+                  "rounded-full px-3 py-2 text-sm font-semibold",
+                  archiveFilter === "trash"
+                    ? "bg-surface-strong text-foreground"
+                    : "text-muted hover:bg-surface"
+                )}
+              >
+                Trash
               </button>
             </div>
 

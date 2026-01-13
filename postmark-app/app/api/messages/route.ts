@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
   const emailAccountId = url.searchParams.get("emailAccountId");
   const isRead = parseBool(url.searchParams.get("isRead"));
   const isArchived = parseBool(url.searchParams.get("isArchived"));
+  const isDeleted = parseBool(url.searchParams.get("isDeleted"));
   const qRaw = url.searchParams.get("q");
   const q = typeof qRaw === "string" ? qRaw.trim() : "";
 
@@ -59,6 +60,9 @@ export async function GET(req: NextRequest) {
     ...(providers.length ? { provider: { in: providers } } : {}),
     ...(typeof isRead === "boolean" ? { isRead } : {}),
     ...(typeof isArchived === "boolean" ? { isArchived } : {}),
+    // If isDeleted is explicitly set, use that value
+    // Otherwise, default to excluding deleted messages (isDeleted: false)
+    ...(typeof isDeleted === "boolean" ? { isDeleted } : { isDeleted: false }),
     ...(q.length
       ? {
           OR: [

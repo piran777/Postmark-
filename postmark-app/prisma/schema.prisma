@@ -71,6 +71,7 @@ model Message {
   labels             Json?
   isRead             Boolean  @default(false)
   isArchived         Boolean  @default(false)
+  isDeleted          Boolean  @default(false)
   syncedAt           DateTime @default(now())
   createdAt          DateTime @default(now())
 

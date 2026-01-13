@@ -576,9 +576,12 @@ export async function PATCH(
         return Response.json({ error: `Microsoft ${action} failed` }, { status: 500 });
       }
 
-      // If deleted, remove from local DB
+      // If deleted, mark as deleted (soft delete) instead of removing
       if (action === "delete") {
-        await prisma.message.delete({ where: { id: msg.id } });
+        await prisma.message.update({
+          where: { id: msg.id },
+          data: { isDeleted: true, isArchived: false },
+        });
         return Response.json({ item: null, deleted: true });
       }
 
@@ -691,9 +694,12 @@ export async function PATCH(
       });
     }
 
-    // If deleted, remove from local DB and return early
+    // If deleted, mark as deleted (soft delete) instead of removing
     if (action === "delete") {
-      await prisma.message.delete({ where: { id: msg.id } });
+      await prisma.message.update({
+        where: { id: msg.id },
+        data: { isDeleted: true, isArchived: false },
+      });
       return Response.json({ item: null, deleted: true });
     }
 
