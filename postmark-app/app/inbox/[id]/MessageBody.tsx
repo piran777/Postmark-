@@ -107,20 +107,22 @@ export function MessageBody(props: { messageId: string; fallbackText?: string | 
 
   if (body?.html) {
     return (
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-background/40">
+      <div className="overflow-hidden rounded-xl border border-border/70">
         <iframe
           title="Message body"
           sandbox=""
-          className="h-[60vh] w-full bg-transparent"
+          className="h-[60vh] w-full"
           srcDoc={`<!doctype html><html><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <base target="_blank" />
 <style>
-  :root { color-scheme: light dark; }
+  /* Always use light mode for email content - emails are designed for white backgrounds */
+  :root { color-scheme: light; }
+  html, body { background: #ffffff; color: #1a1a1a; }
   body { margin: 0; padding: 16px; font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
   img { max-width: 100%; height: auto; }
   table { max-width: 100%; }
-  a { color: inherit; }
+  a { color: #1a73e8; }
 </style></head><body>${body.html}</body></html>`}
         />
       </div>

@@ -31,6 +31,141 @@ function stripScripts(html: string) {
   return html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Microsoft Graph API helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function fetchMicrosoftBody(opts: {
+  providerMessageId: string;
+  accessToken?: string | null;
+}): Promise<{ html: string | null; text: string | null }> {
+  if (!opts.providerMessageId || !opts.accessToken) {
+    return { html: null, text: null };
+  }
+
+  try {
+    // Fetch the message with body content
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/messages/${opts.providerMessageId}?$select=body,bodyPreview`,
+      {
+        headers: {
+          Authorization: `Bearer ${opts.accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!res.ok) {
+      console.error("Microsoft Graph body fetch failed:", res.status, await res.text());
+      return { html: null, text: null };
+    }
+
+    const data = await res.json();
+    const bodyContent = data.body?.content || null;
+    const contentType = data.body?.contentType || "text";
+
+    if (contentType.toLowerCase() === "html") {
+      return { html: stripScripts(bodyContent), text: data.bodyPreview || null };
+    } else {
+      return { html: null, text: bodyContent };
+    }
+  } catch (err) {
+    console.error("Microsoft body fetch error:", err);
+    return { html: null, text: null };
+  }
+}
+
+async function microsoftMarkRead(accessToken: string, messageId: string, isRead: boolean): Promise<boolean> {
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ isRead }),
+    }
+  );
+  return res.ok;
+}
+
+async function microsoftArchive(accessToken: string, messageId: string): Promise<boolean> {
+  // In Outlook, "archive" means moving to the Archive folder
+  // First, get the Archive folder ID
+  const foldersRes = await fetch(
+    `https://graph.microsoft.com/v1.0/me/mailFolders?$filter=displayName eq 'Archive'`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  if (!foldersRes.ok) {
+    console.error("Failed to get Archive folder:", foldersRes.status);
+    return false;
+  }
+
+  const foldersData = await foldersRes.json();
+  const archiveFolder = foldersData.value?.[0];
+  
+  if (!archiveFolder) {
+    console.error("Archive folder not found in Outlook");
+    return false;
+  }
+
+  // Move the message to Archive
+  const moveRes = await fetch(
+    `https://graph.microsoft.com/v1.0/me/messages/${messageId}/move`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ destinationId: archiveFolder.id }),
+    }
+  );
+
+  return moveRes.ok;
+}
+
+async function microsoftUnarchive(accessToken: string, messageId: string): Promise<boolean> {
+  // Move back to Inbox
+  const foldersRes = await fetch(
+    `https://graph.microsoft.com/v1.0/me/mailFolders/inbox`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  if (!foldersRes.ok) {
+    console.error("Failed to get Inbox folder:", foldersRes.status);
+    return false;
+  }
+
+  const inboxFolder = await foldersRes.json();
+
+  const moveRes = await fetch(
+    `https://graph.microsoft.com/v1.0/me/messages/${messageId}/move`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ destinationId: inboxFolder.id }),
+    }
+  );
+
+  return moveRes.ok;
+}
+
 function findMimeParts(payload: any, out: Array<{ mimeType: string; data: string }>) {
   if (!payload) return;
   const mimeType = payload.mimeType as string | undefined;
@@ -129,19 +264,31 @@ export async function GET(
         }>;
       } = null;
 
-  if (includeBody && msg.provider === "google") {
-    try {
-      const tokens = await prisma.emailAccount.findFirst({
-        where: { id: msg.emailAccountId, userId: user.id },
-        select: { accessToken: true, refreshToken: true },
-      });
-      body = await fetchGmailBody({
-        providerMessageId: msg.providerMessageId,
-        accessToken: tokens?.accessToken ?? null,
-        refreshToken: tokens?.refreshToken ?? null,
-      });
-    } catch {
-      body = { html: null, text: null };
+  if (includeBody) {
+    const tokens = await prisma.emailAccount.findFirst({
+      where: { id: msg.emailAccountId, userId: user.id },
+      select: { accessToken: true, refreshToken: true },
+    });
+
+    if (msg.provider === "google") {
+      try {
+        body = await fetchGmailBody({
+          providerMessageId: msg.providerMessageId,
+          accessToken: tokens?.accessToken ?? null,
+          refreshToken: tokens?.refreshToken ?? null,
+        });
+      } catch {
+        body = { html: null, text: null };
+      }
+    } else if (msg.provider === "microsoft") {
+      try {
+        body = await fetchMicrosoftBody({
+          providerMessageId: msg.providerMessageId,
+          accessToken: tokens?.accessToken ?? null,
+        });
+      } catch {
+        body = { html: null, text: null };
+      }
     }
   }
 
@@ -274,21 +421,91 @@ export async function PATCH(
   const account = await prisma.emailAccount.findFirst({
     where: { id: msg.emailAccountId, userId: user.id },
   });
-  if (!account || account.provider !== "google") {
-    return Response.json(
-      { error: "This message provider is not supported yet." },
-      { status: 400 }
-    );
+  if (!account) {
+    return Response.json({ error: "Account not found" }, { status: 404 });
   }
 
   if (!account.refreshToken && !account.accessToken) {
     return Response.json(
-      { error: "Missing Google tokens; reconnect account." },
+      { error: "Missing tokens; reconnect account." },
       { status: 400 }
     );
   }
 
   try {
+    // ─────────────────────────────────────────────────────────────────────────
+    // Microsoft Graph API actions
+    // ─────────────────────────────────────────────────────────────────────────
+    if (account.provider === "microsoft") {
+      const accessToken = account.accessToken;
+      if (!accessToken) {
+        return Response.json({ error: "Missing Microsoft access token" }, { status: 400 });
+      }
+
+      let success = false;
+      let newIsRead = msg.isRead;
+      let newIsArchived = msg.isArchived;
+
+      switch (action) {
+        case "markRead":
+          success = await microsoftMarkRead(accessToken, msg.providerMessageId, true);
+          newIsRead = true;
+          break;
+        case "markUnread":
+          success = await microsoftMarkRead(accessToken, msg.providerMessageId, false);
+          newIsRead = false;
+          break;
+        case "archive":
+          success = await microsoftArchive(accessToken, msg.providerMessageId);
+          newIsArchived = true;
+          break;
+        case "unarchive":
+          success = await microsoftUnarchive(accessToken, msg.providerMessageId);
+          newIsArchived = false;
+          break;
+      }
+
+      if (!success) {
+        return Response.json({ error: `Microsoft ${action} failed` }, { status: 500 });
+      }
+
+      await prisma.message.update({
+        where: { id: msg.id },
+        data: {
+          isRead: newIsRead,
+          isArchived: newIsArchived,
+          syncedAt: new Date(),
+        },
+      });
+
+      const updated = await prisma.message.findFirst({
+        where: { id: msg.id, userId: user.id },
+        select: {
+          id: true,
+          provider: true,
+          subject: true,
+          fromAddress: true,
+          toAddress: true,
+          date: true,
+          isRead: true,
+          isArchived: true,
+          snippet: true,
+        },
+      });
+
+      return Response.json({ item: updated });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Gmail API actions
+    // ─────────────────────────────────────────────────────────────────────────
+    if (account.provider !== "google") {
+      return Response.json(
+        { error: "This message provider is not supported yet." },
+        { status: 400 }
+      );
+    }
+
     const oauth2Client = gmailAuth(
       account.accessToken ?? undefined,
       account.refreshToken ?? undefined

@@ -193,35 +193,37 @@ export default async function MessageDetailPage(props: { params: Promise<{ id: s
             </div>
           </div>
 
-          {/* Conversation (silent hydration on open) */}
-          {msg.provider === "google" && msg.threadId ? (
-            <ConversationThread
-              currentId={msg.id}
-              messageId={msg.id}
-              provider={msg.provider}
-              threadId={msg.threadId}
-              emailAccountId={msg.emailAccountId}
-              initial={threadMessages.map((t) => ({
-                id: t.id,
-                subject: t.subject,
-                fromAddress: t.fromAddress,
-                toAddress: t.toAddress,
-                date: t.date ? t.date.toISOString() : null,
-                snippet: t.snippet,
-                isRead: t.isRead,
-                isArchived: t.isArchived,
-              }))}
-            />
-          ) : null}
-
           {/* Body */}
-          <div className="px-5 pb-6 sm:px-6">
+          <div className="px-5 pb-5 sm:px-6">
             <MessageBody messageId={msg.id} fallbackText={msg.snippet} />
 
             <div className="mt-3 text-xs text-muted">
               Body is loaded on-demand and rendered in a sandboxed iframe (scripts disabled).
             </div>
           </div>
+
+          {/* Thread / Conversation - shown below the main email */}
+          {msg.threadId && threadMessages.length > 1 ? (
+            <div className="border-t border-border/50 px-5 pb-5 pt-4 sm:px-6">
+              <ConversationThread
+                currentId={msg.id}
+                messageId={msg.id}
+                provider={msg.provider}
+                threadId={msg.threadId}
+                emailAccountId={msg.emailAccountId}
+                initial={threadMessages.map((t) => ({
+                  id: t.id,
+                  subject: t.subject,
+                  fromAddress: t.fromAddress,
+                  toAddress: t.toAddress,
+                  date: t.date ? t.date.toISOString() : null,
+                  snippet: t.snippet,
+                  isRead: t.isRead,
+                  isArchived: t.isArchived,
+                }))}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
