@@ -1,4 +1,4 @@
-import { Button, AnchorButton } from "@/components/ui/button";
+import { AnchorButton } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -48,9 +48,14 @@ export default function Home() {
               unified mail
             </Badge>
           </div>
-          <span className="text-xs text-muted">
-            Early prototype – local only, no real email yet
-          </span>
+          <div className="flex items-center gap-2">
+            <AnchorButton href="/auth/signin" variant="ghost" size="sm">
+              Sign in
+            </AnchorButton>
+            <AnchorButton href="/auth/signup" size="sm">
+              Create account
+            </AnchorButton>
+          </div>
         </div>
       </header>
 
@@ -73,18 +78,16 @@ export default function Home() {
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <Button size="lg" className="w-full sm:w-auto">
-              Connect accounts (coming soon)
-            </Button>
+            <AnchorButton size="lg" href="/auth/signup" className="w-full sm:w-auto">
+              Get started
+            </AnchorButton>
             <AnchorButton
               size="lg"
-              href="/api/health"
-              target="_blank"
-              rel="noreferrer"
+              href="/auth/signin"
               variant="secondary"
               className="w-full sm:w-auto"
             >
-              Check database connection
+              Sign in
             </AnchorButton>
           </div>
 
@@ -164,8 +167,8 @@ export default function Home() {
         </div>
 
               <p className="text-[11px] text-muted">
-                This is a visual prototype. Next: wire to real Gmail/Outlook and
-                let users control which providers are shown.
+                Connect your Gmail and Outlook accounts to see all your email in
+                one unified inbox.
               </p>
             </CardContent>
           </Card>
