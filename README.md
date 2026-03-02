@@ -1,3 +1,6 @@
+### App is running at:
+```https://postmark-chi.vercel.app```
+
 ### .env
 
 ```env
