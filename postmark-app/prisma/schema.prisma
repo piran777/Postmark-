@@ -81,6 +81,9 @@ model Message {
   // Provider IDs are only unique within a mailbox/account.
   @@unique([emailAccountId, providerMessageId])
   @@index([userId, provider])
+  @@index([userId, date])
+  @@index([userId, isDeleted])
+  @@index([threadId])
 }
 
 model UserPreference {
