@@ -122,6 +122,7 @@ export default function InboxPage() {
     children: React.ReactNode;
     onClick: () => void;
     disabled?: boolean;
+    className?: string;
   }) {
     return (
       <Button
@@ -134,7 +135,8 @@ export default function InboxPage() {
         className={cn(
           "h-8 rounded-full px-3 text-xs font-semibold",
           props.selected &&
-            "border-border-strong bg-surface-strong shadow-sm hover:bg-surface-strong"
+            "border-border-strong bg-surface-strong shadow-sm hover:bg-surface-strong",
+          props.className
         )}
       >
         {props.children}
