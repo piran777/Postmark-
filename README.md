@@ -1,6 +1,8 @@
 ### App is running at:
-```https://postmark-chi.vercel.app
+```https://postmark-chi.vercel.app```
 
+### App restrictions
+```
 Due to oAuth restrictions with gmail, you can't signin with gmail. Need to have google verification form approved. 
 Hotmail works. 
 Work accounts and school accounts require admin permission.
