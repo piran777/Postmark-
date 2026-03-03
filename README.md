@@ -10,7 +10,7 @@ Work accounts and school accounts require admin permission.
 ```
 
 ### Demo Video - Short idea of what it does
-```https://www.youtube.com/watch?v=P697r3ZrU6U```
+```https://www.youtube.com/watch?v=ksI7yvAziS0```
 
 ### .env
 
