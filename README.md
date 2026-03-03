@@ -7,8 +7,10 @@ Due to oAuth restrictions with gmail (or email me to make you a test user),
 you can't signin with gmail. Need to have google verification form approved. 
 Hotmail works. 
 Work accounts and school accounts require admin permission.
-
 ```
+
+### Demo Video - Short idea of what it does
+```https://www.youtube.com/watch?v=P697r3ZrU6U```
 
 ### .env
 
